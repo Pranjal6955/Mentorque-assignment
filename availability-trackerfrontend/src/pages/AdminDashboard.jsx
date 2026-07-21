@@ -176,10 +176,15 @@ export default function AdminDashboard() {
   const [loadingRecs, setLoadingRecs] = useState(false);
   const [overlapOnlyFilter, setOverlapOnlyFilter] = useState(false);
   
-  // Availability state
+  // Availability state — always use Monday of the current week so dayOfWeek indices
+  // (0=Mon … 6=Sun) align with the template convention used by the backend.
   const [weekStart, setWeekStart] = useState(() => {
     const today = new Date();
     const base = new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), today.getUTCDate()));
+    const day = base.getUTCDay();
+    const diff = base.getUTCDate() - day + (day === 0 ? -6 : 1);
+    base.setUTCDate(diff);
+    base.setUTCHours(0, 0, 0, 0);
     return base.toISOString().slice(0, 10);
   });
   
@@ -345,6 +350,11 @@ export default function AdminDashboard() {
   useEffect(() => {
     fetchRecommendations();
   }, [fetchRecommendations]);
+
+  // Clear stale slot modal when recommendations change (new user / call type / week)
+  useEffect(() => {
+    setSlotModalRec(null);
+  }, [recommendations]);
 
   useEffect(() => {
     if (selectedUser) setUserEmail(selectedUser.email);
@@ -1014,19 +1024,39 @@ export default function AdminDashboard() {
 
                                 {/* Time Slot Selection Modal trigger row */}
                                 {rec.hasOverlap && rec.overlappingSlots?.length > 0 ? (
-                                  <div className="pt-2 border-t border-navy-800/80 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                                    <div className="text-xs font-bold text-emerald-400 flex items-center gap-1.5">
-                                      <Clock className="w-3.5 h-3.5 text-emerald-400" />
-                                      <span>{rec.overlappingSlots.length} Matching Time Slots</span>
+                                  <div className="pt-2 border-t border-navy-800/80 space-y-3">
+                                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                                      <div className="text-xs font-bold text-emerald-400 flex items-center gap-1.5">
+                                        <Clock className="w-3.5 h-3.5 text-emerald-400" />
+                                        <span>{rec.overlappingSlots.length} Matching Time Slots</span>
+                                      </div>
+                                      <button
+                                        type="button"
+                                        onClick={() => setSlotModalRec(rec)}
+                                        className="px-3.5 py-2 text-xs font-extrabold text-black bg-primary-500 hover:bg-primary-400 active:bg-primary-400 rounded-xl shadow-md transition-all flex items-center justify-center gap-1.5 shrink-0"
+                                      >
+                                        <Calendar className="w-3.5 h-3.5 text-black" />
+                                        <span>Choose a Time ➔</span>
+                                      </button>
                                     </div>
-                                    <button
-                                      type="button"
-                                      onClick={() => setSlotModalRec(rec)}
-                                      className="px-3.5 py-2 text-xs font-extrabold text-black bg-primary-500 hover:bg-primary-400 active:bg-primary-400 rounded-xl shadow-md transition-all flex items-center justify-center gap-1.5 shrink-0"
-                                    >
-                                      <Calendar className="w-3.5 h-3.5 text-black" />
-                                      <span>Choose a Time ➔</span>
-                                    </button>
+
+                                    {/* Inline overlapping time slot chips */}
+                                    {overlapOnlyFilter && (
+                                      <div className="flex flex-wrap gap-1.5">
+                                        {rec.overlappingSlots.map((slot, sIdx) => {
+                                          const slotInfo = getSlotDateTime(slot, weekStart);
+                                          return (
+                                            <span
+                                              key={sIdx}
+                                              className="inline-flex items-center gap-1 px-2 py-1 rounded-lg bg-emerald-500/10 border border-emerald-500/30 text-emerald-300 text-[11px] font-medium"
+                                            >
+                                              <Calendar className="w-3 h-3 text-emerald-400" />
+                                              {slotInfo.label}
+                                            </span>
+                                          );
+                                        })}
+                                      </div>
+                                    )}
                                   </div>
                                 ) : (
                                   <div className="pt-2 border-t border-navy-800/80 text-[11px] text-slate-500 italic">

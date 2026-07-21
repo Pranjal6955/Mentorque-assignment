@@ -175,7 +175,7 @@ export async function getAvailabilityForUser(req, res, next) {
         ? { userId: null, mentorId: userId, role: "MENTOR" }
         : { userId, mentorId: null, role: "USER" };
 
-    const weekStartDate = weekStart ? new Date(weekStart) : getWeekStart(new Date());
+    const weekStartDate = weekStart ? getWeekStart(new Date(weekStart)) : getWeekStart(new Date());
     weekStartDate.setUTCHours(0, 0, 0, 0);
 
     const result = await loadWeeklyAvailability(owner, weekStartDate);

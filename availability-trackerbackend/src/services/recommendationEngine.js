@@ -232,7 +232,7 @@ export async function getMentorRecommendations({ userId, callType, weekStart }) 
     select: { id: true, name: true, email: true, description: true, tags: true, timezone: true },
   });
 
-  const weekStartDate = weekStart ? new Date(weekStart) : getWeekStart(new Date());
+  const weekStartDate = weekStart ? getWeekStart(new Date(weekStart)) : getWeekStart(new Date());
   weekStartDate.setUTCHours(0, 0, 0, 0);
 
   // Load User availability grid
