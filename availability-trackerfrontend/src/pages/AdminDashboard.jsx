@@ -119,6 +119,17 @@ function getSlotDateTime(slot, weekStartStr) {
   }
 }
 
+/** Return only overlapping slots whose start time is in the future. */
+function filterFutureSlots(slots, weekStartStr) {
+  if (!slots || !weekStartStr) return slots || [];
+  const now = Date.now();
+  const weekStartMs = new Date(`${weekStartStr}T00:00:00.000Z`).getTime();
+  return slots.filter((slot) => {
+    const slotStartMs = weekStartMs + (slot.dayOfWeek * 24 + slot.hour) * 3600000;
+    return slotStartMs > now;
+  });
+}
+
 function sanitizeMatchReason(reason) {
   if (!reason || typeof reason !== "string") return reason;
   let cleaned = reason
@@ -974,7 +985,7 @@ export default function AdminDashboard() {
                                     {rec.hasOverlap ? (
                                       <span className="text-emerald-400 font-medium text-[11px] flex items-center gap-1">
                                         <Clock className="w-3 h-3 text-emerald-400" />
-                                        {rec.overlappingSlotsCount} matching time slots
+                                        {filterFutureSlots(rec.overlappingSlots, weekStart).length} upcoming matching slots
                                       </span>
                                     ) : (
                                       <span className="text-amber-400/90 font-medium text-[11px] flex items-center gap-1">
@@ -1023,46 +1034,52 @@ export default function AdminDashboard() {
                                 )}
 
                                 {/* Time Slot Selection Modal trigger row */}
-                                {rec.hasOverlap && rec.overlappingSlots?.length > 0 ? (
-                                  <div className="pt-2 border-t border-navy-800/80 space-y-3">
-                                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                                      <div className="text-xs font-bold text-emerald-400 flex items-center gap-1.5">
-                                        <Clock className="w-3.5 h-3.5 text-emerald-400" />
-                                        <span>{rec.overlappingSlots.length} Matching Time Slots</span>
-                                      </div>
-                                      <button
-                                        type="button"
-                                        onClick={() => setSlotModalRec(rec)}
-                                        className="px-3.5 py-2 text-xs font-extrabold text-black bg-primary-500 hover:bg-primary-400 active:bg-primary-400 rounded-xl shadow-md transition-all flex items-center justify-center gap-1.5 shrink-0"
-                                      >
-                                        <Calendar className="w-3.5 h-3.5 text-black" />
-                                        <span>Choose a Time ➔</span>
-                                      </button>
-                                    </div>
+                                {(() => {
+                                  const futureSlots = filterFutureSlots(rec.overlappingSlots, weekStart);
+                                  if (futureSlots.length > 0) {
+                                    return (
+                                      <div className="pt-2 border-t border-navy-800/80 space-y-3">
+                                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                                          <div className="text-xs font-bold text-emerald-400 flex items-center gap-1.5">
+                                            <Clock className="w-3.5 h-3.5 text-emerald-400" />
+                                            <span>{futureSlots.length} Upcoming Matching Time Slots</span>
+                                          </div>
+                                          <button
+                                            type="button"
+                                            onClick={() => setSlotModalRec(rec)}
+                                            className="px-3.5 py-2 text-xs font-extrabold text-black bg-primary-500 hover:bg-primary-400 active:bg-primary-400 rounded-xl shadow-md transition-all flex items-center justify-center gap-1.5 shrink-0"
+                                          >
+                                            <Calendar className="w-3.5 h-3.5 text-black" />
+                                            <span>Choose a Time ➔</span>
+                                          </button>
+                                        </div>
 
-                                    {/* Inline overlapping time slot chips */}
-                                    {overlapOnlyFilter && (
-                                      <div className="flex flex-wrap gap-1.5">
-                                        {rec.overlappingSlots.map((slot, sIdx) => {
-                                          const slotInfo = getSlotDateTime(slot, weekStart);
-                                          return (
-                                            <span
-                                              key={sIdx}
-                                              className="inline-flex items-center gap-1 px-2 py-1 rounded-lg bg-emerald-500/10 border border-emerald-500/30 text-emerald-300 text-[11px] font-medium"
-                                            >
-                                              <Calendar className="w-3 h-3 text-emerald-400" />
-                                              {slotInfo.label}
-                                            </span>
-                                          );
-                                        })}
+                                        {/* Inline overlapping time slot chips */}
+                                        {overlapOnlyFilter && (
+                                          <div className="flex flex-wrap gap-1.5">
+                                            {futureSlots.map((slot, sIdx) => {
+                                              const slotInfo = getSlotDateTime(slot, weekStart);
+                                              return (
+                                                <span
+                                                  key={sIdx}
+                                                  className="inline-flex items-center gap-1 px-2 py-1 rounded-lg bg-emerald-500/10 border border-emerald-500/30 text-emerald-300 text-[11px] font-medium"
+                                                >
+                                                  <Calendar className="w-3 h-3 text-emerald-400" />
+                                                  {slotInfo.label}
+                                                </span>
+                                              );
+                                            })}
+                                          </div>
+                                        )}
                                       </div>
-                                    )}
-                                  </div>
-                                ) : (
-                                  <div className="pt-2 border-t border-navy-800/80 text-[11px] text-slate-500 italic">
-                                    No matching availability this week — click Select & Book to choose a time manually.
-                                  </div>
-                                )}
+                                    );
+                                  }
+                                  return (
+                                    <div className="pt-2 border-t border-navy-800/80 text-[11px] text-slate-500 italic">
+                                      No matching availability this week — click Select & Book to choose a time manually.
+                                    </div>
+                                  );
+                                })()}
                               </div>
                             );
                           })}
@@ -2613,42 +2630,53 @@ export default function AdminDashboard() {
               <p className="text-[11px] font-bold text-slate-400 uppercase tracking-wider mb-2">
                 Click a slot to pre-fill the schedule & select mentor:
               </p>
-              {slotModalRec.overlappingSlots?.map((slot, sIdx) => {
-                const slotInfo = getSlotDateTime(slot, weekStart);
-                const key = `${slotModalRec.mentor.id}_${slot.dayOfWeek}_${slot.hour}`;
-                const isChipSelected = selectedSlotKey === key;
-                return (
-                  <button
-                    key={sIdx}
-                    type="button"
-                    onClick={() => {
-                      handleSelectMentorForCall(slotModalRec, slot);
-                      setSlotModalRec(null);
-                    }}
-                    className={`w-full flex items-center justify-between p-3.5 rounded-xl border text-left transition-all ${
-                      isChipSelected
-                        ? "bg-emerald-500/20 border-emerald-500/50 text-white ring-1 ring-emerald-500/30"
-                        : "bg-navy-950 border-navy-800 text-slate-300 hover:bg-navy-800 hover:border-emerald-500/40 hover:text-white"
-                    }`}
-                  >
-                    <div className="flex items-center gap-3">
-                      <div className="w-8 h-8 rounded-lg bg-navy-900 border border-navy-700 text-emerald-400 flex items-center justify-center shrink-0">
-                        <Calendar className="w-4 h-4 text-emerald-400" />
-                      </div>
-                      <div>
-                        <p className="text-xs font-bold text-white">{slotInfo.label}</p>
-                        <p className="text-[10px] text-slate-400">{slotInfo.dateStr}</p>
-                      </div>
+              {(() => {
+                const futureSlots = filterFutureSlots(slotModalRec.overlappingSlots, weekStart);
+                if (futureSlots.length === 0) {
+                  return (
+                    <div className="py-8 text-center text-slate-500 text-xs">
+                      <Clock className="w-6 h-6 mx-auto text-slate-600 mb-2" />
+                      <p>All matching slots for this week have passed.</p>
                     </div>
+                  );
+                }
+                return futureSlots.map((slot, sIdx) => {
+                  const slotInfo = getSlotDateTime(slot, weekStart);
+                  const key = `${slotModalRec.mentor.id}_${slot.dayOfWeek}_${slot.hour}`;
+                  const isChipSelected = selectedSlotKey === key;
+                  return (
+                    <button
+                      key={sIdx}
+                      type="button"
+                      onClick={() => {
+                        handleSelectMentorForCall(slotModalRec, slot);
+                        setSlotModalRec(null);
+                      }}
+                      className={`w-full flex items-center justify-between p-3.5 rounded-xl border text-left transition-all ${
+                        isChipSelected
+                          ? "bg-emerald-500/20 border-emerald-500/50 text-white ring-1 ring-emerald-500/30"
+                          : "bg-navy-950 border-navy-800 text-slate-300 hover:bg-navy-800 hover:border-emerald-500/40 hover:text-white"
+                      }`}
+                    >
+                      <div className="flex items-center gap-3">
+                        <div className="w-8 h-8 rounded-lg bg-navy-900 border border-navy-700 text-emerald-400 flex items-center justify-center shrink-0">
+                          <Calendar className="w-4 h-4 text-emerald-400" />
+                        </div>
+                        <div>
+                          <p className="text-xs font-bold text-white">{slotInfo.label}</p>
+                          <p className="text-[10px] text-slate-400">{slotInfo.dateStr}</p>
+                        </div>
+                      </div>
 
-                    <span className={`text-xs font-bold px-3 py-1.5 rounded-lg border transition-all ${
-                      isChipSelected ? "bg-emerald-500 text-black border-emerald-400" : "bg-navy-900 text-emerald-300 border-emerald-500/30"
-                    }`}>
-                      {isChipSelected ? "✓ Booked" : "Select Slot"}
-                    </span>
-                  </button>
-                );
-              })}
+                      <span className={`text-xs font-bold px-3 py-1.5 rounded-lg border transition-all ${
+                        isChipSelected ? "bg-emerald-500 text-black border-emerald-400" : "bg-navy-900 text-emerald-300 border-emerald-500/30"
+                      }`}>
+                        {isChipSelected ? "✓ Booked" : "Select Slot"}
+                      </span>
+                    </button>
+                  );
+                });
+              })()}
             </div>
 
             {/* Modal Footer */}
