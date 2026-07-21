@@ -15,6 +15,7 @@ const PORT = process.env.PORT || 5000;
 
 const allowedOrigins = [
   process.env.FRONTEND_URL,
+  "https://mentorque-assignment-six.vercel.app",
   "https://availabilitytrackerfrontend.vercel.app",
   "http://localhost:3000",
   "http://localhost:5173",
