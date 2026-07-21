@@ -2,6 +2,7 @@ import { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import MentorqueBrand from "../components/MentorqueLogo";
+import { Eye, EyeOff, UserPlus } from "lucide-react";
 
 const ROLES = [
   { value: "USER", label: "User" },
@@ -12,6 +13,7 @@ export default function Register() {
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
   const [role, setRole] = useState("USER");
   const [timezone, setTimezone] = useState("UTC");
   const [error, setError] = useState("");
@@ -40,12 +42,12 @@ export default function Register() {
           <div className="flex flex-col items-center mb-6">
             <MentorqueBrand size="lg" className="mb-3" textClassName="font-bold text-white tracking-tight" />
             <h1 className="text-2xl font-semibold text-white mb-1">
-    Register
-  </h1>
-  <p className="text-slate-400 text-sm">
-    Mentorque Availability
-  </p>
-</div>
+              Register
+            </h1>
+            <p className="text-slate-400 text-sm">
+              Mentorque Availability
+            </p>
+          </div>
           <form onSubmit={handleSubmit} className="space-y-4">
             {error && (
               <div className="text-red-400 text-sm bg-red-500/10 border border-red-500/30 rounded-lg px-3 py-2">
@@ -76,15 +78,25 @@ export default function Register() {
             </div>
             <div>
               <label className="block text-sm font-medium text-slate-300 mb-1">Password</label>
-              <input
-                type="password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                required
-                minLength={8}
-                className="w-full px-4 py-2.5 rounded-lg bg-navy-800 border border-navy-600 text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent"
-                placeholder="Min 8 characters"
-              />
+              <div className="relative">
+                <input
+                  type={showPassword ? "text" : "password"}
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  required
+                  minLength={8}
+                  className="w-full px-4 py-2.5 pr-10 rounded-lg bg-navy-800 border border-navy-600 text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+                  placeholder="Min 8 characters"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword((prev) => !prev)}
+                  className="absolute inset-y-0 right-0 pr-3 flex items-center text-slate-400 hover:text-white transition"
+                  aria-label={showPassword ? "Hide password" : "Show password"}
+                >
+                  {showPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
+                </button>
+              </div>
             </div>
             <div>
               <label className="block text-sm font-medium text-slate-300 mb-1">Role</label>
@@ -114,14 +126,15 @@ export default function Register() {
             <button
               type="submit"
               disabled={loading}
-              className="w-full py-2.5 rounded-lg bg-primary-600 hover:bg-primary-500 text-navy-950 font-medium transition disabled:opacity-50"
+              className="w-full py-2.5 rounded-lg bg-primary-500 hover:bg-primary-400 active:bg-primary-400 text-black font-bold transition disabled:opacity-50 flex items-center justify-center gap-2"
             >
-              {loading ? "Creating account..." : "Register"}
+              <UserPlus className="w-4 h-4 text-black" />
+              <span>{loading ? "Creating account..." : "Register"}</span>
             </button>
           </form>
           <p className="mt-6 text-center text-slate-400 text-sm">
             Already have an account?{" "}
-            <Link to="/login" className="text-primary-400 hover:underline">
+            <Link to="/login" className="text-primary-400 hover:underline font-medium">
               Sign in
             </Link>
           </p>

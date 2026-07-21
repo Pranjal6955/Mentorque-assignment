@@ -1,9 +1,9 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { Outlet, NavLink, useNavigate, useLocation, Link } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import MentorqueBrand from "./MentorqueLogo";
-
-const SSO_WELCOME_MODAL_KEY = "sso_show_welcome_modal";
+import { getNotifications } from "../api/meetings";
+import { Calendar, Users, LayoutGrid, LogOut, Settings, Check, Bell, CheckCircle2, XCircle, Clock } from "lucide-react";
 
 function capitalize(word) {
   if (!word) return "";
@@ -36,60 +36,130 @@ function getInitials(name, email) {
   return first.slice(0, 2).toUpperCase() || "?";
 }
 
-function IconCalendar({ className }) {
-  return (
-    <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-      <path
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"
-      />
-    </svg>
-  );
-}
-
-function IconUsers({ className }) {
-  return (
-    <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-      <path
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z"
-      />
-    </svg>
-  );
-}
-
-function IconLayoutGrid({ className }) {
-  return (
-    <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-      <path
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zm10 0a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zm10 0a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z"
-      />
-    </svg>
-  );
-}
-
-function IconLogOut({ className }) {
-  return (
-    <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-      <path
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"
-      />
-    </svg>
-  );
-}
-
 function navLinkClass({ isActive }) {
-  return `inline-flex items-center gap-2 rounded-lg px-3 py-1.5 text-[13px] font-medium transition-colors ${
+  return `inline-flex items-center gap-2 rounded-lg px-3.5 py-1.5 text-xs font-bold transition-all ${
     isActive
-      ? "bg-white/[0.08] text-ink-50 shadow-[inset_0_1px_0_rgba(255,255,255,0.06)]"
-      : "text-ink-400 hover:bg-white/[0.04] hover:text-ink-50"
+      ? "bg-primary-500 text-black"
+      : "text-slate-400 hover:bg-navy-800 hover:text-white"
   }`;
+}
+
+function NotificationBell() {
+  const [open, setOpen] = useState(false);
+  const [logs, setLogs] = useState([]);
+  const [unreadCount, setUnreadCount] = useState(0);
+  const popoverRef = useRef(null);
+
+  const fetchLogs = useCallback(async () => {
+    try {
+      const res = await getNotifications();
+      if (res?.success && Array.isArray(res.logs)) {
+        setLogs(res.logs);
+        const readIds = JSON.parse(localStorage.getItem("mq_read_notifs") || "[]");
+        const unread = res.logs.filter((l) => !readIds.includes(l.id)).length;
+        setUnreadCount(unread);
+      }
+    } catch {
+      // ignore error
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchLogs();
+    const interval = setInterval(fetchLogs, 10000);
+    return () => clearInterval(interval);
+  }, [fetchLogs]);
+
+  useEffect(() => {
+    const handleClickOutside = (e) => {
+      if (popoverRef.current && !popoverRef.current.contains(e.target)) {
+        setOpen(false);
+      }
+    };
+    if (open) document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, [open]);
+
+  const markAllRead = () => {
+    const ids = logs.map((l) => l.id);
+    localStorage.setItem("mq_read_notifs", JSON.stringify(ids));
+    setUnreadCount(0);
+  };
+
+  const handleToggle = () => {
+    const next = !open;
+    setOpen(next);
+    if (next) markAllRead();
+  };
+
+  return (
+    <div className="relative" ref={popoverRef}>
+      <button
+        type="button"
+        onClick={handleToggle}
+        title="Notifications"
+        className="relative inline-flex h-9 w-9 items-center justify-center rounded-lg border border-white/[0.08] bg-navy-900 text-slate-300 transition-colors hover:bg-navy-800 hover:text-white"
+      >
+        <Bell className="h-4 w-4" />
+        {unreadCount > 0 && (
+          <span className="absolute -top-1 -right-1 flex h-4 min-w-[1rem] items-center justify-center rounded-full bg-red-500 px-1 text-[10px] font-black text-white shadow-md">
+            {unreadCount}
+          </span>
+        )}
+      </button>
+
+      {open && (
+        <div className="absolute right-0 mt-2.5 w-80 sm:w-96 rounded-2xl border border-white/[0.1] bg-navy-900 p-4 shadow-2xl z-50 animate-in fade-in zoom-in-95 duration-150">
+          <div className="flex items-center justify-between border-b border-white/[0.08] pb-3">
+            <h3 className="text-sm font-bold text-white flex items-center gap-2">
+              <Bell className="w-4 h-4 text-primary-400" />
+              Notification Center
+            </h3>
+            <span className="text-[10px] font-semibold uppercase px-2 py-0.5 rounded-full bg-primary-500/20 text-primary-300">
+              {logs.length} Total
+            </span>
+          </div>
+
+          <div className="mq-scroll max-h-80 overflow-y-auto space-y-2 mt-3 pr-1">
+            {logs.length === 0 ? (
+              <div className="py-8 text-center text-xs text-slate-400">
+                No notification alerts yet.
+              </div>
+            ) : (
+              logs.map((log) => {
+                const isBooked = log.eventType === "MEETING_BOOKED";
+                return (
+                  <div
+                    key={log.id}
+                    className="rounded-xl border border-white/[0.06] bg-navy-950 p-3 hover:border-white/20 transition space-y-1"
+                  >
+                    <div className="flex items-start justify-between gap-2">
+                      <h4 className="text-xs font-bold text-white flex items-center gap-1.5 line-clamp-1">
+                        {isBooked ? (
+                          <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+                        ) : (
+                          <XCircle className="w-3.5 h-3.5 text-red-400 shrink-0" />
+                        )}
+                        <span>{log.subject}</span>
+                      </h4>
+                      <span className="text-[9px] font-mono text-slate-500 shrink-0">
+                        {new Date(log.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                      </span>
+                    </div>
+                    {log.recipients && log.recipients.length > 0 && (
+                      <p className="text-[10px] text-slate-400 truncate">
+                        <span className="text-slate-500">To:</span> {log.recipients.join(", ")}
+                      </p>
+                    )}
+                  </div>
+                );
+              })
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  );
 }
 
 function UserMenu({ name, email, role, onLogout }) {
@@ -97,30 +167,30 @@ function UserMenu({ name, email, role, onLogout }) {
   const initials = getInitials(name, email);
 
   return (
-    <div className="flex items-center gap-2">
+    <div className="flex items-center gap-3">
       <div className="flex min-w-0 items-center gap-2.5" title={email || undefined}>
         <div
-          className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-white/[0.1] bg-white/[0.04]"
+          className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-primary-500/40 bg-primary-500/10"
           aria-hidden
         >
-          <span className="text-[11px] font-bold leading-none text-ink-400">{initials}</span>
+          <span className="text-xs font-bold leading-none text-primary-400">{initials}</span>
         </div>
         <div className="hidden min-w-0 sm:block">
-          <p className="max-w-[8rem] truncate text-xs font-semibold text-ink-50">{display}</p>
+          <p className="max-w-[8rem] truncate text-xs font-semibold text-white">{display}</p>
           {role && (
-            <p className="text-[10px] font-medium uppercase tracking-wider text-ink-500">{role}</p>
+            <p className="text-[10px] font-bold uppercase tracking-wider text-primary-400">{role}</p>
           )}
         </div>
       </div>
-      <div className="hidden h-6 w-px bg-white/[0.08] sm:block" aria-hidden />
+      <div className="hidden h-6 w-px bg-navy-700 sm:block" aria-hidden />
       <button
         type="button"
         onClick={onLogout}
         title="Sign out"
         aria-label="Sign out"
-        className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-ink-400 transition-colors hover:bg-red-500/10 hover:text-red-400"
+        className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-slate-400 transition-colors hover:bg-red-500/10 hover:text-red-400"
       >
-        <IconLogOut className="h-4 w-4" />
+        <LogOut className="h-4 w-4" />
       </button>
     </div>
   );
@@ -136,20 +206,10 @@ function HeaderBrand() {
 
 function AvailabilityLegend() {
   return (
-    <div className="flex flex-wrap items-center gap-x-5 gap-y-1 text-xs text-ink-400">
+    <div className="flex flex-wrap items-center gap-x-5 gap-y-1 text-xs text-slate-400">
       <span className="inline-flex items-center gap-2">
-        <span className="mq-slot-check h-2.5 w-2.5" aria-hidden>
-          <svg
-            className="h-1.5 w-1.5 text-white/85"
-            viewBox="0 0 12 12"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="2"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-          >
-            <path d="M2.5 6l2.5 2.5 4.5-5" />
-          </svg>
+        <span className="mq-slot-check h-3 w-3 flex items-center justify-center bg-primary-500 text-black rounded-full" aria-hidden>
+          <Check className="h-2 w-2 text-black stroke-[3]" />
         </span>
         Available
       </span>
@@ -175,7 +235,6 @@ export default function Layout() {
   const isAdminRoute = location.pathname.startsWith("/admin");
   const email = user?.email ?? "";
 
-  const [welcomeModal, setWelcomeModal] = useState(null);
   const [scrolled, setScrolled] = useState(false);
 
   useEffect(() => {
@@ -189,24 +248,9 @@ export default function Layout() {
     setScrolled(window.scrollY > 12);
   }, [location.pathname]);
 
-  useEffect(() => {
-    try {
-      const raw = sessionStorage.getItem(SSO_WELCOME_MODAL_KEY);
-      if (!raw) return;
-      const data = JSON.parse(raw);
-      sessionStorage.removeItem(SSO_WELCOME_MODAL_KEY);
-      setWelcomeModal({
-        email: data.email || "—",
-        role: data.role || "—",
-      });
-      const t = setTimeout(() => setWelcomeModal(null), 2500);
-      return () => clearTimeout(t);
-    } catch (_) {}
-  }, []);
-
   const handleLogout = () => {
     logout();
-    navigate("/welcome");
+    navigate("/login");
   };
 
   const schedulePath = user?.role === "MENTOR" ? "/mentor" : "/availability";
@@ -218,100 +262,56 @@ export default function Layout() {
 
   return (
     <div className="min-h-screen bg-navy-950 flex flex-col">
-      {welcomeModal && (
-        <div
-          className="fixed inset-0 z-[100] flex items-center justify-center bg-navy-950/80 backdrop-blur-sm p-4 cursor-pointer"
-          onClick={() => setWelcomeModal(null)}
-        >
-          <div
-            className="bg-white/[0.04] backdrop-blur-xl border border-white/[0.1] rounded-2xl shadow-2xl p-10 max-w-lg w-full text-center"
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby="welcome-modal-title"
-          >
-            <div className="flex justify-center mb-4">
-              <span
-                className="flex h-14 w-14 items-center justify-center rounded-full bg-green-500/20 text-green-400"
-                aria-hidden
-              >
-                <svg
-                  className="h-9 w-9"
-                  fill="none"
-                  stroke="currentColor"
-                  viewBox="0 0 24 24"
-                  strokeWidth={2.5}
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                >
-                  <path d="M20 6L9 17l-5-5" />
-                </svg>
-              </span>
-            </div>
-            <p id="welcome-modal-title" className="text-ink-400 text-lg mb-6">
-              Logged in as
-            </p>
-            <p className="text-ink-50 text-xl sm:text-2xl mb-3 break-all">{welcomeModal.email}</p>
-            <p className="text-ink-50 text-xl sm:text-2xl font-semibold">{welcomeModal.role}</p>
-            <p className="text-ink-600 text-xs mt-6">Click anywhere to continue</p>
-          </div>
-        </div>
-      )}
-
       <header
         className={`sticky top-0 z-50 isolate transition-[background-color,box-shadow,border-color] duration-300 ease-out ${
           scrolled
-            ? "border-b border-white/[0.06] bg-navy-950/75 backdrop-blur-xl shadow-[0_4px_24px_-8px_rgba(0,0,0,0.5)]"
+            ? "border-b border-navy-800 bg-navy-950/90 backdrop-blur-xl"
             : "bg-transparent shadow-none"
         }`}
       >
-        <div className="mx-auto flex h-14 w-full max-w-[1600px] items-center justify-between gap-4 px-4 sm:px-6 lg:px-8">
+        <div className="mx-auto flex h-16 w-full max-w-[1600px] items-center justify-between gap-4 px-4 sm:px-6 lg:px-8">
           <div className="flex min-w-0 items-center gap-4 sm:gap-6">
             <HeaderBrand />
 
-            <nav className="flex items-center gap-1">
-              {isAdminRoute && user?.role === "ADMIN" ? (
+            <nav className="flex items-center gap-1.5">
+              {user?.role === "ADMIN" ? (
                 <>
                   <NavLink to="/admin" end className={navLinkClass}>
-                    <IconLayoutGrid className="h-4 w-4 shrink-0" />
-                    <span className="hidden md:inline">Dashboard</span>
+                    <LayoutGrid className="h-4 w-4 shrink-0" />
+                    <span className="hidden sm:inline">Admin Hub</span>
                   </NavLink>
-                  <NavLink to="/admin/settings" className={navLinkClass}>
-                    <span className="hidden md:inline">Settings</span>
-                    <span className="md:hidden">Settings</span>
+                  <NavLink to="/mentor" className={navLinkClass}>
+                    <Calendar className="h-4 w-4 shrink-0" />
+                    <span className="hidden sm:inline">Mentor View</span>
                   </NavLink>
-                  <NavLink to={schedulePath} className={navLinkClass}>
-                    <IconCalendar className="h-4 w-4 shrink-0" />
-                    <span className="hidden md:inline">{scheduleLabel}</span>
+                  <NavLink to="/availability" className={navLinkClass}>
+                    <Calendar className="h-4 w-4 shrink-0" />
+                    <span className="hidden sm:inline">User View</span>
                   </NavLink>
                   <NavLink to="/admin/schedules" className={navLinkClass}>
-                    <IconUsers className="h-4 w-4 shrink-0" />
+                    <Users className="h-4 w-4 shrink-0" />
                     <span className="hidden md:inline">Team Schedules</span>
                   </NavLink>
                 </>
+              ) : user?.role === "MENTOR" ? (
+                <NavLink to="/mentor" className={navLinkClass}>
+                  <Calendar className="h-4 w-4 shrink-0" />
+                  <span>Mentor Schedule</span>
+                </NavLink>
               ) : (
-                <>
-                  <NavLink to={schedulePath} className={navLinkClass}>
-                    <IconCalendar className="h-4 w-4 shrink-0" />
-                    <span>{scheduleLabel}</span>
-                  </NavLink>
-                  {user?.role === "ADMIN" && (
-                    <>
-                      <NavLink to="/admin/schedules" className={navLinkClass}>
-                        <IconUsers className="h-4 w-4 shrink-0" />
-                        <span className="hidden sm:inline">Team Schedules</span>
-                      </NavLink>
-                      <NavLink to="/admin" className={navLinkClass}>
-                        <IconLayoutGrid className="h-4 w-4 shrink-0" />
-                        <span className="hidden sm:inline">Admin</span>
-                      </NavLink>
-                    </>
-                  )}
-                </>
+                <NavLink to="/availability" className={navLinkClass}>
+                  <Calendar className="h-4 w-4 shrink-0" />
+                  <span>Your Schedule</span>
+                </NavLink>
               )}
             </nav>
+
           </div>
 
-          <UserMenu name={user?.name} email={email} role={user?.role} onLogout={handleLogout} />
+          <div className="flex items-center gap-3">
+            <NotificationBell />
+            <UserMenu name={user?.name} email={email} role={user?.role} onLogout={handleLogout} />
+          </div>
         </div>
       </header>
 
@@ -319,15 +319,16 @@ export default function Layout() {
         <Outlet />
       </main>
 
-      <footer className="fixed inset-x-0 bottom-0 z-40 border-t border-white/[0.06] bg-navy-900/80 backdrop-blur-xl">
+      <footer className="fixed inset-x-0 bottom-0 z-40 border-t border-navy-800 bg-navy-900/90 backdrop-blur-xl">
         <div className="mx-auto flex h-11 w-full max-w-[1600px] items-center gap-4 px-4 sm:px-6 lg:px-8">
           {showAvailabilityLegend ? (
             <AvailabilityLegend />
           ) : (
-            <span className="text-xs text-ink-600">Mentorque Availability</span>
+            <span className="text-xs text-slate-400">Mentorque Scheduling Platform</span>
           )}
         </div>
       </footer>
     </div>
   );
 }
+

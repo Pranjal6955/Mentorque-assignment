@@ -1,4 +1,4 @@
-import { get, post } from "./client.js";
+import { get, post, put, del } from "./client.js";
 
 export async function listUsers() {
   return get("/api/admin/users");
@@ -10,6 +10,22 @@ export async function listMentors() {
 
 export async function createUser(data) {
   return post("/api/admin/create-user", data);
+}
+
+export async function updateUserMetadata(userId, data) {
+  return put(`/api/admin/users/${userId}/metadata`, data);
+}
+
+export async function deleteUser(userId) {
+  return del(`/api/admin/users/${userId}`);
+}
+
+export async function getRecommendations(userId, callType, weekStart) {
+  const params = new URLSearchParams();
+  if (userId) params.set("userId", userId);
+  if (callType) params.set("callType", callType);
+  if (weekStart) params.set("weekStart", weekStart);
+  return get(`/api/admin/recommendations?${params.toString()}`);
 }
 
 export async function getAvailabilityForUser(userId, weekStart) {

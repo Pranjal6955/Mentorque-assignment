@@ -88,11 +88,12 @@ export default function App() {
           <Route
             path="mentor"
             element={
-              <ProtectedRoute allowedRoles={["MENTOR"]}>
+              <ProtectedRoute allowedRoles={["MENTOR", "ADMIN"]}>
                 <MentorAvailability />
               </ProtectedRoute>
             }
           />
+
           <Route
             path="admin"
             element={

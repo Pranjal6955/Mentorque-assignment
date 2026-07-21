@@ -26,6 +26,8 @@ model User {
   password           String
   role               Role     @default(USER)
   timezone           String   @default("UTC")
+  description        String?
+  tags               String[] @default([])
   googleRefreshToken String?  @map("google_refresh_token")
   createdAt          DateTime @default(now()) @map("created_at")
 
@@ -38,6 +40,10 @@ model User {
   availabilityWeekMeta    AvailabilityWeekMeta[]   @relation("UserWeekMeta")
   mentorWeekMeta          AvailabilityWeekMeta[]  @relation("MentorWeekMeta")
   meetingsAsAdmin         Meeting[]               @relation("AdminMeetings")
+  meetingsAsUser          Meeting[]               @relation("UserMeetings")
+  meetingsAsMentor        Meeting[]               @relation("MentorMeetings")
+
+  @@map("users")
 }
 
 model Availability {
@@ -119,7 +125,10 @@ model AvailabilityWeekMeta {
 model Meeting {
   id              String   @id @default(uuid())
   adminId         String   @map("admin_id")
+  userId          String?  @map("user_id")
+  mentorId        String?  @map("mentor_id")
   title           String
+  callType        String?  @map("call_type")
   startTime       DateTime @map("start_time")
   endTime         DateTime @map("end_time")
   meetLink        String?  @map("meet_link")
@@ -128,7 +137,11 @@ model Meeting {
   createdAt       DateTime @default(now()) @map("created_at")
 
   admin        User                 @relation("AdminMeetings", fields: [adminId], references: [id], onDelete: Cascade)
+  user         User?                @relation("UserMeetings", fields: [userId], references: [id], onDelete: SetNull)
+  mentor       User?                @relation("MentorMeetings", fields: [mentorId], references: [id], onDelete: SetNull)
   participants MeetingParticipant[]
+
+  @@map("meetings")
 }
 
 model MeetingParticipant {

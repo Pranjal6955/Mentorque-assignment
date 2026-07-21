@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { useAuth } from "../context/AuthContext";
 import * as availabilityApi from "../api/availability";
+import { listMeetings } from "../api/meetings";
 import {
   getViewWeekDates,
   formatDateLocal,
@@ -10,6 +11,7 @@ import {
   isSlotInPast,
 } from "../utils/time";
 import MqSelect from "./MqSelect";
+import { Calendar, Clock, Sparkles, Video, CheckCircle2, Zap, Trash2, User, ShieldCheck } from "lucide-react";
 
 const HOURS = Array.from({ length: 24 }, (_, i) => i);
 
@@ -72,6 +74,167 @@ function SaveScopeModal({ open, saving, onClose, onChoose, forOther = false }) {
   );
 }
 
+function CustomPresetModal({ open, onClose, onApply }) {
+
+  const [selectedDays, setSelectedDays] = useState([0, 1, 2, 3, 4]); // Default Mon-Fri
+  const [startHour, setStartHour] = useState(9); // 9 AM
+  const [endHour, setEndHour] = useState(17); // 5 PM
+
+  if (!open) return null;
+
+  const DAYS = [
+    { idx: 0, name: "Mon" },
+    { idx: 1, name: "Tue" },
+    { idx: 2, name: "Wed" },
+    { idx: 3, name: "Thu" },
+    { idx: 4, name: "Fri" },
+    { idx: 5, name: "Sat" },
+    { idx: 6, name: "Sun" },
+  ];
+
+  const toggleDay = (idx) => {
+    setSelectedDays((prev) =>
+      prev.includes(idx) ? prev.filter((d) => d !== idx) : [...prev, idx]
+    );
+  };
+
+  const handleApply = () => {
+    onApply({ selectedDays, startHour, endHour });
+    onClose();
+  };
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-navy-950/80 backdrop-blur-sm p-4"
+      onClick={onClose}
+    >
+      <div
+        className="w-full max-w-md rounded-xl border border-white/[0.1] bg-navy-900 p-6 shadow-2xl space-y-5"
+        role="dialog"
+        aria-modal="true"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-center justify-between border-b border-white/[0.08] pb-3">
+          <h3 className="text-base font-bold text-white flex items-center gap-2">
+            <Zap className="w-4 h-4 text-amber-400" />
+            Configure Custom Preset
+          </h3>
+          <button
+            type="button"
+            onClick={onClose}
+            className="text-slate-400 hover:text-white text-xs font-bold px-2 py-1 rounded bg-navy-800"
+          >
+            ✕
+          </button>
+        </div>
+
+        {/* Days Selector */}
+        <div>
+          <label className="block text-xs font-semibold uppercase tracking-wider text-slate-400 mb-2">
+            Select Days of Week
+          </label>
+          <div className="grid grid-cols-7 gap-1.5">
+            {DAYS.map((day) => {
+              const active = selectedDays.includes(day.idx);
+              return (
+                <button
+                  key={day.idx}
+                  type="button"
+                  onClick={() => toggleDay(day.idx)}
+                  className={`py-2 rounded-lg text-xs font-extrabold transition ${
+                    active
+                      ? "bg-primary-500 text-black shadow-sm"
+                      : "bg-navy-800 text-slate-400 hover:bg-navy-700 hover:text-white border border-white/[0.06]"
+                  }`}
+                >
+                  {day.name}
+                </button>
+              );
+            })}
+          </div>
+          <div className="flex items-center gap-3 mt-2 text-[11px]">
+            <button
+              type="button"
+              onClick={() => setSelectedDays([0, 1, 2, 3, 4])}
+              className="text-primary-400 hover:underline font-medium"
+            >
+              Select Weekdays
+            </button>
+            <span className="text-slate-600">•</span>
+            <button
+              type="button"
+              onClick={() => setSelectedDays([5, 6])}
+              className="text-primary-400 hover:underline font-medium"
+            >
+              Select Weekends
+            </button>
+            <span className="text-slate-600">•</span>
+            <button
+              type="button"
+              onClick={() => setSelectedDays([0, 1, 2, 3, 4, 5, 6])}
+              className="text-primary-400 hover:underline font-medium"
+            >
+              Select All
+            </button>
+          </div>
+        </div>
+
+        {/* Time Range Pickers */}
+        <div className="grid grid-cols-2 gap-4">
+          <div>
+            <label className="block text-xs font-semibold uppercase tracking-wider text-slate-400 mb-1.5">
+              Start Hour
+            </label>
+            <select
+              value={startHour}
+              onChange={(e) => setStartHour(Number(e.target.value))}
+              className="mq-input font-medium"
+            >
+              {HOURS.map((h) => (
+                <option key={h} value={h}>
+                  {h === 0 ? "12:00 AM (00:00)" : h < 12 ? `${h}:00 AM` : h === 12 ? "12:00 PM" : `${h - 12}:00 PM`}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <label className="block text-xs font-semibold uppercase tracking-wider text-slate-400 mb-1.5">
+              End Hour
+            </label>
+            <select
+              value={endHour}
+              onChange={(e) => setEndHour(Number(e.target.value))}
+              className="mq-input font-medium"
+            >
+              {HOURS.map((h) => (
+                <option key={h + 1} value={h + 1}>
+                  {h + 1 === 24 ? "12:00 AM (Midnight)" : h + 1 < 12 ? `${h + 1}:00 AM` : h + 1 === 12 ? "12:00 PM" : `${h + 1 - 12}:00 PM`}
+                </option>
+              ))}
+            </select>
+          </div>
+        </div>
+
+        {/* Modal CTAs */}
+        <div className="flex items-center justify-end gap-2 pt-2 border-t border-white/[0.08]">
+          <button type="button" onClick={onClose} className="mq-btn-secondary h-9 text-xs">
+            Cancel
+          </button>
+          <button
+            type="button"
+            onClick={handleApply}
+            disabled={selectedDays.length === 0 || startHour >= endHour}
+            className="mq-btn-primary h-9 text-xs shadow-md"
+          >
+            Apply Preset
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+
 export default function AvailabilityDashboard({
   role = "USER",
   viewAs = null,
@@ -85,10 +248,14 @@ export default function AvailabilityDashboard({
   );
   const [weekOffset, setWeekOffset] = useState(0);
   const [data, setData] = useState({ dates: [], availability: {}, hasTemplate: false });
+  const [myMeetings, setMyMeetings] = useState([]);
+  const [meetingsLoading, setMeetingsLoading] = useState(false);
   const [loading, setLoading] = useState(!user);
   const [saving, setSaving] = useState(false);
   const [saveModalOpen, setSaveModalOpen] = useState(false);
+  const [customModalOpen, setCustomModalOpen] = useState(false);
   const [toggles, setToggles] = useState({});
+
   const [error, setError] = useState("");
   const [nowMs, setNowMs] = useState(() => Date.now());
   const dragRef = useRef({ active: false, paintValue: false, visited: new Set() });
@@ -129,13 +296,49 @@ export default function AvailabilityDashboard({
     }
   }, [weekOffset, user?.id, viewAs?.userId, viewAs?.mentorId]);
 
+  const fetchMyMeetings = useCallback(async () => {
+    if (!user) return;
+    setMeetingsLoading(true);
+    try {
+      const params = {};
+      if (viewAs?.userId) params.userId = viewAs.userId;
+      if (viewAs?.mentorId) params.mentorId = viewAs.mentorId;
+      const meetings = await listMeetings(params);
+      setMyMeetings(Array.isArray(meetings) ? meetings : []);
+    } catch (e) {
+      console.warn("Failed to load meetings:", e.message);
+    } finally {
+      setMeetingsLoading(false);
+    }
+  }, [user?.id, viewAs?.userId, viewAs?.mentorId]);
+
+  const getBookedMeetingForSlot = useCallback(
+    (dateStr, hour) => {
+      if (!myMeetings || myMeetings.length === 0) return null;
+      const slot = slotToUTC(dateStr, hour);
+      const slotStartMs = new Date(slot.startTime).getTime();
+      const slotEndMs = new Date(slot.endTime).getTime();
+
+      return myMeetings.find((m) => {
+        const mStartMs = new Date(m.startTime).getTime();
+        const mEndMs = new Date(m.endTime || m.startTime).getTime();
+        return mStartMs < slotEndMs && mEndMs > slotStartMs;
+      });
+    },
+    [myMeetings]
+  );
+
+
   useEffect(() => {
     setToggles({});
   }, [weekOffset, viewAs?.userId, viewAs?.mentorId]);
 
   useEffect(() => {
-    if (user) fetchWeekly();
-  }, [fetchWeekly]);
+    if (user) {
+      fetchWeekly();
+      fetchMyMeetings();
+    }
+  }, [fetchWeekly, fetchMyMeetings, user]);
 
   const isSlotEnabled = (dateStr, hour) => {
     const key = `${dateStr}-${hour}`;
@@ -149,6 +352,11 @@ export default function AvailabilityDashboard({
 
   const gridDates = getViewWeekDates(weekOffset);
   const gridStart = gridDates[0];
+
+  // Calculate total enabled hours this week
+  const totalAvailableHoursThisWeek = gridDates.reduce((total, dateStr) => {
+    return total + HOURS.filter((hour) => !isSlotDisabled(dateStr, hour) && isSlotEnabled(dateStr, hour)).length;
+  }, 0);
 
   const slotKey = (dateStr, hour) => `${dateStr}-${hour}`;
 
@@ -193,6 +401,95 @@ export default function AvailabilityDashboard({
     });
   };
 
+  // Quick Preset Helper Actions with Edge Case Handling
+  const applyStandardWeekdayPreset = () => {
+    setToggles((prev) => {
+      const updated = { ...prev };
+      gridDates.forEach((dateStr, dayIdx) => {
+        const isWeekday = dayIdx < 5; // Monday (0) to Friday (4)
+        HOURS.forEach((hour) => {
+          if (!isSlotDisabled(dateStr, hour)) {
+            const shouldEnable = isWeekday && hour >= 9 && hour < 17; // 9 AM - 5 PM
+            const key = slotKey(dateStr, hour);
+            const currentlyEnabled = isSlotEnabled(dateStr, hour);
+            if (shouldEnable !== currentlyEnabled) {
+              updated[key] = shouldEnable;
+            } else {
+              delete updated[key];
+            }
+          }
+        });
+      });
+      return updated;
+    });
+  };
+
+  const applyEveningPreset = () => {
+    setToggles((prev) => {
+      const updated = { ...prev };
+      gridDates.forEach((dateStr) => {
+        HOURS.forEach((hour) => {
+          if (!isSlotDisabled(dateStr, hour)) {
+            const shouldEnable = hour >= 17 && hour < 21; // 5 PM - 9 PM
+            const key = slotKey(dateStr, hour);
+            const currentlyEnabled = isSlotEnabled(dateStr, hour);
+            if (shouldEnable !== currentlyEnabled) {
+              updated[key] = shouldEnable;
+            } else {
+              delete updated[key];
+            }
+          }
+        });
+      });
+      return updated;
+    });
+  };
+
+  const clearAllWeekSlots = () => {
+    setToggles((prev) => {
+      const updated = { ...prev };
+      gridDates.forEach((dateStr) => {
+        HOURS.forEach((hour) => {
+          if (!isSlotDisabled(dateStr, hour)) {
+            const key = slotKey(dateStr, hour);
+            const currentlyEnabled = isSlotEnabled(dateStr, hour);
+            if (currentlyEnabled) {
+              updated[key] = false;
+            } else {
+              delete updated[key];
+            }
+          }
+        });
+      });
+      return updated;
+    });
+  };
+
+  const applyCustomPreset = ({ selectedDays, startHour, endHour }) => {
+
+    setToggles((prev) => {
+      const updated = { ...prev };
+      gridDates.forEach((dateStr, dayIdx) => {
+        const isSelectedDay = selectedDays.includes(dayIdx);
+        HOURS.forEach((hour) => {
+          if (!isSlotDisabled(dateStr, hour)) {
+            const shouldEnable = isSelectedDay && hour >= startHour && hour < endHour;
+            const key = slotKey(dateStr, hour);
+            const currentlyEnabled = isSlotEnabled(dateStr, hour);
+            if (shouldEnable !== currentlyEnabled) {
+              updated[key] = shouldEnable;
+            } else {
+              delete updated[key];
+            }
+          }
+        });
+      });
+      return updated;
+    });
+  };
+
+
+
   const isColumnAllEnabled = (dateStr) => {
     const actionable = HOURS.filter((h) => !isSlotDisabled(dateStr, h));
     return actionable.length > 0 && actionable.every((h) => isSlotEnabled(dateStr, h));
@@ -202,6 +499,7 @@ export default function AvailabilityDashboard({
     const actionable = gridDates.filter((d) => !isSlotDisabled(d, hour));
     return actionable.length > 0 && actionable.every((d) => isSlotEnabled(d, hour));
   };
+
 
   const hasActionableColumn = (dateStr) => HOURS.some((h) => !isSlotDisabled(dateStr, h));
   const hasActionableRow = (hour) => gridDates.some((d) => !isSlotDisabled(d, hour));
@@ -288,14 +586,22 @@ export default function AvailabilityDashboard({
   return (
     <div className={embedded ? "space-y-5" : "mx-auto w-full max-w-[1600px] space-y-5"}>
       {!readOnly && (
-        <SaveScopeModal
-          open={saveModalOpen}
-          saving={saving}
-          onClose={() => !saving && setSaveModalOpen(false)}
-          onChoose={commitSave}
-          forOther={Boolean(viewAs)}
-        />
+        <>
+          <SaveScopeModal
+            open={saveModalOpen}
+            saving={saving}
+            onClose={() => !saving && setSaveModalOpen(false)}
+            onChoose={commitSave}
+            forOther={Boolean(viewAs)}
+          />
+          <CustomPresetModal
+            open={customModalOpen}
+            onClose={() => setCustomModalOpen(false)}
+            onApply={applyCustomPreset}
+          />
+        </>
       )}
+
 
       <header className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
         {!embedded && (
@@ -322,125 +628,286 @@ export default function AvailabilityDashboard({
         />
       </header>
 
+      {/* KPI Stats Header Summary */}
+      {!embedded && (
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+          <div className="mq-card p-4 flex items-center gap-4">
+            <div className="rounded-lg bg-primary-500/10 p-3 text-primary-400">
+              <Clock className="w-6 h-6" />
+            </div>
+            <div>
+              <p className="text-xs font-medium text-ink-500">Available This Week</p>
+              <h3 className="text-xl font-bold text-ink-50 mt-0.5">{totalAvailableHoursThisWeek} Hours</h3>
+            </div>
+          </div>
+
+          <div className="mq-card p-4 flex items-center gap-4">
+            <div className="rounded-lg bg-emerald-500/10 p-3 text-emerald-400">
+              <Video className="w-6 h-6" />
+            </div>
+            <div>
+              <p className="text-xs font-medium text-ink-500">Scheduled Calls</p>
+              <h3 className="text-xl font-bold text-ink-50 mt-0.5">{myMeetings.length} Sessions</h3>
+            </div>
+          </div>
+
+          <div className="mq-card p-4 flex items-center gap-4">
+            <div className="rounded-lg bg-indigo-500/10 p-3 text-indigo-400">
+              <ShieldCheck className="w-6 h-6" />
+            </div>
+            <div>
+              <p className="text-xs font-medium text-ink-500">Role & Timezone</p>
+              <h3 className="text-sm font-semibold text-ink-50 mt-0.5">{role} ({displayTimezone})</h3>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Booked Meetings Section */}
+      {!embedded && myMeetings.length > 0 && (
+        <section className="mq-card p-5">
+          <div className="flex items-center gap-2 mb-4">
+            <Calendar className="w-5 h-5 text-primary-400" />
+            <h2 className="text-base font-semibold text-ink-50">Scheduled Calls</h2>
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+            {myMeetings.map((m) => {
+              const endTimeMs = new Date(m.endTime || m.startTime).getTime();
+              const isDone = endTimeMs <= nowMs;
+              return (
+                <div
+                  key={m.id}
+                  className={`rounded-lg border p-4 transition ${
+                    isDone
+                      ? "border-emerald-500/40 bg-emerald-950/20 hover:border-emerald-400/60"
+                      : "border-white/[0.08] bg-navy-800 hover:border-primary-500/30"
+                  }`}
+                >
+                  <div className="flex items-start justify-between gap-2">
+                    <h4 className="font-semibold text-ink-50 text-sm line-clamp-1">{m.title}</h4>
+                    {isDone ? (
+                      <span className="text-[10px] font-extrabold uppercase px-2.5 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 flex items-center gap-1">
+                        <CheckCircle2 className="w-3 h-3 text-emerald-400" />
+                        Completed
+                      </span>
+                    ) : m.callType ? (
+                      <span className="text-[10px] font-semibold uppercase px-2 py-0.5 rounded-full bg-primary-500/20 text-primary-300">
+                        {m.callType.replace("_", " ")}
+                      </span>
+                    ) : (
+                      <span className="text-[10px] font-semibold uppercase px-2 py-0.5 rounded-full bg-blue-500/20 text-blue-300">
+                        Scheduled
+                      </span>
+                    )}
+                  </div>
+                  <p className="text-xs text-ink-400 mt-2 flex items-center gap-1.5">
+                    <Clock className="w-3.5 h-3.5 text-ink-500" />
+                    {formatDateLocal(m.startTime, displayTimezone)} ({new Date(m.startTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })})
+                  </p>
+                  <div className="mt-3 pt-3 border-t border-white/[0.04] text-xs text-ink-400 space-y-1">
+                    {m.user && <p><span className="text-ink-600">User:</span> {m.user.name}</p>}
+                    {m.mentor && <p><span className="text-ink-600">Mentor:</span> {m.mentor.name}</p>}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </section>
+      )}
+
+
+
       {error && (
         <div className="rounded-lg border border-red-500/30 bg-red-500/10 px-4 py-2.5 text-sm text-red-400">
           {error}
         </div>
       )}
 
-      <section className="mq-card overflow-hidden">
-        <div className="grid grid-cols-1 gap-4 border-b border-white/[0.06] px-5 py-4 lg:grid-cols-[1fr_auto_1fr] lg:items-center">
-          <div className="min-w-0 lg:col-start-1">
-            <h2 className="text-sm font-semibold text-ink-50">Weekly grid</h2>
-            <p className="mt-0.5 text-xs text-ink-500">
+      <section className="mq-card overflow-hidden border border-white/[0.08] bg-navy-900 shadow-xl rounded-xl">
+        {/* Cal.com Style Header Controls Bar */}
+        <div className="flex flex-col gap-4 border-b border-white/[0.08] bg-navy-950/60 p-5 lg:flex-row lg:items-center lg:justify-between">
+          <div>
+            <h2 className="text-base font-bold text-white tracking-tight flex items-center gap-2">
+              <Calendar className="w-5 h-5 text-primary-400" />
+              Weekly Schedule Editor
+            </h2>
+            <p className="mt-1 text-xs text-slate-400">
               {readOnly
-                ? "Weekly availability grid. Navigate weeks to inspect past or upcoming schedules."
-                : "Click or drag to toggle. Day/time labels select a full row or column."}
+                ? "Inspect scheduled availability for the selected week."
+                : "Click or drag across slots to mark availability. Changes apply recurringly."}
             </p>
           </div>
-          <div className="flex items-center justify-center gap-3 justify-self-center lg:col-start-2">
-            <button
-              type="button"
-              onClick={prevWeek}
-              disabled={!readOnly && weekOffset === 0}
-              className="mq-btn-icon"
-              aria-label="Previous week"
-            >
-              <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                <path strokeLinecap="round" strokeLinejoin="round" d="M15 19l-7-7 7-7" />
-              </svg>
-            </button>
-            <span className="min-w-[10rem] text-center text-sm font-medium text-ink-400">
-              {formatDateLocal(gridStart, displayTimezone)}
-              <span className="mx-1.5 text-ink-600">–</span>
-              {formatDateLocal(gridDates[6], displayTimezone)}
-            </span>
-            <button type="button" onClick={nextWeek} className="mq-btn-icon" aria-label="Next week">
-              <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
-              </svg>
-            </button>
-          </div>
-          <div className="flex flex-wrap items-center gap-2 justify-self-center lg:col-start-3 lg:justify-self-end">
+
+          <div className="flex flex-wrap items-center gap-3">
+            {/* Week Navigator */}
+            <div className="flex items-center gap-1.5 rounded-lg border border-white/[0.1] bg-navy-800 p-1 text-xs font-semibold text-white">
+              <button
+                type="button"
+                onClick={prevWeek}
+                disabled={!readOnly && weekOffset === 0}
+                className="rounded-md p-1.5 hover:bg-navy-700 disabled:opacity-30 disabled:cursor-not-allowed transition"
+                aria-label="Previous week"
+              >
+                <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M15 19l-7-7 7-7" />
+                </svg>
+              </button>
+              <span className="px-2 font-medium text-slate-200">
+                {formatDateLocal(gridStart, displayTimezone)} – {formatDateLocal(gridDates[6], displayTimezone)}
+              </span>
+              <button
+                type="button"
+                onClick={nextWeek}
+                className="rounded-md p-1.5 hover:bg-navy-700 transition"
+                aria-label="Next week"
+              >
+                <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
+                </svg>
+              </button>
+              {weekOffset !== 0 && (
+                <button
+                  type="button"
+                  onClick={() => setWeekOffset(0)}
+                  className="ml-1 rounded px-2 py-0.5 bg-primary-500/20 text-primary-300 hover:bg-primary-500/30 text-[11px] font-bold uppercase transition"
+                >
+                  Today
+                </button>
+              )}
+            </div>
+
+            {/* Save / Cancel CTAs */}
             {!readOnly && (
-              <>
-                <button type="button" onClick={cancelChanges} disabled={!hasChanges} className="mq-btn-secondary">
+              <div className="flex items-center gap-2">
+                {hasChanges && (
+                  <span className="text-xs text-amber-400 font-medium hidden sm:inline">
+                    ● {Object.keys(toggles).length} unsaved changes
+                  </span>
+                )}
+                <button type="button" onClick={cancelChanges} disabled={!hasChanges} className="mq-btn-secondary h-9 text-xs">
                   Cancel
                 </button>
                 <button
                   type="button"
                   onClick={handleSaveClick}
                   disabled={saving || !hasChanges}
-                  className="mq-btn-primary"
+                  className="mq-btn-primary h-9 text-xs shadow-md"
                 >
-                  {saving ? "Saving…" : "Save changes"}
+                  {saving ? "Saving…" : "Save Schedule"}
                 </button>
-              </>
+              </div>
             )}
           </div>
         </div>
 
+        {/* Cal.com Quick Presets Toolbar */}
+        {!readOnly && (
+          <div className="flex flex-wrap items-center justify-between gap-3 border-b border-white/[0.06] bg-navy-950/40 px-5 py-3 text-xs">
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="font-semibold text-slate-300 flex items-center gap-1.5 mr-1">
+                <Zap className="w-3.5 h-3.5 text-amber-400" />
+                Quick Presets:
+              </span>
+
+              <button
+                type="button"
+                onClick={applyStandardWeekdayPreset}
+                className="px-3 py-1.5 rounded-md bg-navy-800 hover:bg-navy-700 text-white font-medium border border-white/[0.08] hover:border-primary-500/40 transition flex items-center gap-1.5 shadow-sm"
+              >
+                <span>⚡</span> Working Hours (Mon–Fri, 9am–5pm)
+              </button>
+              <button
+                type="button"
+                onClick={applyEveningPreset}
+                className="px-3 py-1.5 rounded-md bg-navy-800 hover:bg-navy-700 text-white font-medium border border-white/[0.08] hover:border-indigo-500/40 transition flex items-center gap-1.5 shadow-sm"
+              >
+                <span>🌙</span> Evening Shift (5pm–9pm)
+              </button>
+              <button
+                type="button"
+                onClick={() => setCustomModalOpen(true)}
+                className="px-3 py-1.5 rounded-md bg-navy-800 hover:bg-navy-700 text-white font-medium border border-white/[0.08] hover:border-amber-500/40 transition flex items-center gap-1.5 shadow-sm"
+              >
+                <span>⚙️</span> Custom Preset…
+              </button>
+              <button
+                type="button"
+                onClick={clearAllWeekSlots}
+                className="px-3 py-1.5 rounded-md bg-navy-800 hover:bg-red-500/20 text-slate-400 hover:text-red-300 font-medium border border-white/[0.08] hover:border-red-500/40 transition flex items-center gap-1.5 shadow-sm"
+              >
+                <span>🧹</span> Clear Schedule
+              </button>
+
+            </div>
+          </div>
+        )}
+
         <div className="mq-scroll max-h-[60vh] overflow-auto">
           {loading ? (
-            <div className="p-16 text-center text-sm text-ink-500">Loading…</div>
+            <div className="p-16 text-center text-sm text-slate-400">Loading schedule grid…</div>
           ) : (
             <table className="w-full table-fixed border-collapse select-none">
               <colgroup>
-                <col style={{ width: "11rem" }} />
+                <col style={{ width: "10rem" }} />
                 {gridDates.map((d) => (
                   <col key={d} />
                 ))}
               </colgroup>
-              <thead className="sticky top-0 z-10 bg-navy-800/80 backdrop-blur-md">
+              <thead className="sticky top-0 z-10 bg-navy-950 border-b border-white/[0.08]">
                 <tr>
-                  <th className="px-3 py-2.5 text-left text-xs font-medium text-ink-500 whitespace-nowrap">
-                    Time
+                  <th className="px-3 py-3 text-left text-xs font-bold text-slate-400 uppercase tracking-wider whitespace-nowrap">
+                    Time (UTC)
                   </th>
                   {gridDates.map((d) => {
                     const colActive = isColumnAllEnabled(d);
                     const colActionable = hasActionableColumn(d);
+                    const dateObj = new Date(d);
+                    const dayName = dateObj.toLocaleDateString("en-US", { weekday: "short" }).toUpperCase();
+                    const dayNum = dateObj.getDate();
+
                     return (
-                      <th key={d} className="px-1 py-1.5 text-center">
+                      <th key={d} className="px-1 py-2 text-center">
                         <button
                           type="button"
                           onClick={() => !readOnly && toggleColumn(d)}
                           disabled={readOnly || !colActionable}
                           title={!readOnly && colActionable ? "Toggle all slots this day" : undefined}
                           className={`
-                            w-full rounded-md px-1 py-1.5 text-xs font-semibold transition
+                            w-full rounded-lg px-2 py-2 text-xs font-bold transition flex flex-col items-center justify-center gap-0.5
                             ${!colActionable
-                              ? "cursor-not-allowed text-ink-600"
-                              : "cursor-pointer hover:bg-white/[0.04]"}
-                            ${colActionable && colActive ? "text-ink-50" : ""}
-                            ${colActionable && !colActive ? "text-ink-50" : ""}
+                              ? "cursor-not-allowed text-slate-600"
+                              : "cursor-pointer hover:bg-navy-800"}
+                            ${colActionable && colActive ? "text-primary-400 bg-navy-800/80" : "text-slate-200"}
                           `}
                         >
-                          {formatDateLocal(d, displayTimezone)}
+                          <span className="text-[10px] tracking-wider font-extrabold text-slate-400">{dayName}</span>
+                          <span className={`text-sm font-black px-2 py-0.5 rounded-full ${colActive ? "bg-primary-500 text-black" : "bg-navy-900 text-white"}`}>
+                            {dayNum}
+                          </span>
                         </button>
                       </th>
                     );
                   })}
                 </tr>
               </thead>
-              <tbody className="divide-y divide-white/[0.04]">
+              <tbody className="divide-y divide-white/[0.04] bg-navy-950/20">
                 {HOURS.map((hour) => {
                   const rowActive = isRowAllEnabled(hour);
                   const rowActionable = hasActionableRow(hour);
                   return (
-                    <tr key={hour}>
-                      <td className="px-1 py-1 align-middle">
+                    <tr key={hour} className="hover:bg-white/[0.01] transition-colors">
+                      <td className="px-2 py-1.5 align-middle">
                         <button
                           type="button"
                           onClick={() => !readOnly && toggleRow(hour)}
                           disabled={readOnly || !rowActionable}
                           title={!readOnly && rowActionable ? "Toggle all slots this hour" : undefined}
                           className={`
-                            w-full rounded-md px-2 py-1.5 text-left text-xs font-medium whitespace-nowrap transition
+                            w-full rounded-md px-2.5 py-1.5 text-left text-xs font-mono font-medium whitespace-nowrap transition
                             ${!rowActionable
-                              ? "cursor-not-allowed text-ink-600"
-                              : "cursor-pointer hover:bg-white/[0.04]"}
-                            ${rowActionable && rowActive ? "text-ink-50" : ""}
-                            ${rowActionable && !rowActive ? "text-ink-400" : ""}
+                              ? "cursor-not-allowed text-slate-600"
+                              : "cursor-pointer hover:bg-navy-800"}
+                            ${rowActionable && rowActive ? "text-primary-300 font-bold bg-navy-800/60" : "text-slate-400"}
                           `}
                         >
                           {formatTimeOptionLabel(hour)}
@@ -449,8 +916,42 @@ export default function AvailabilityDashboard({
                       {gridDates.map((dateStr) => {
                         const enabled = isSlotEnabled(dateStr, hour);
                         const disabled = isSlotDisabled(dateStr, hour);
+                        const bookedMeeting = getBookedMeetingForSlot(dateStr, hour);
+                        const isMeetingDone =
+                          bookedMeeting &&
+                          new Date(bookedMeeting.endTime || bookedMeeting.startTime).getTime() <= nowMs;
+
+                        if (bookedMeeting) {
+                          return (
+                            <td key={dateStr} className="p-1 align-middle">
+                              <div
+                                title={`Scheduled Call: ${bookedMeeting.title}${bookedMeeting.user ? ` (User: ${bookedMeeting.user.name})` : ""}${bookedMeeting.mentor ? ` (Mentor: ${bookedMeeting.mentor.name})` : ""}`}
+                                className={`relative flex items-center justify-center w-full h-8 rounded-md text-[11px] font-extrabold shadow-md transition-all border ${
+                                  isMeetingDone
+                                    ? "bg-emerald-500 text-black border-emerald-400 ring-2 ring-emerald-500/40"
+                                    : "bg-indigo-600 text-white border-indigo-400 ring-2 ring-indigo-500/50"
+                                }`}
+                              >
+                                <span className="flex items-center gap-1 truncate px-1">
+                                  {isMeetingDone ? (
+                                    <>
+                                      <CheckCircle2 className="w-3 h-3 text-black shrink-0" />
+                                      <span className="truncate">Done</span>
+                                    </>
+                                  ) : (
+                                    <>
+                                      <Video className="w-3 h-3 text-white shrink-0" />
+                                      <span className="truncate">Booked</span>
+                                    </>
+                                  )}
+                                </span>
+                              </div>
+                            </td>
+                          );
+                        }
+
                         return (
-                          <td key={dateStr} className="p-0.5 align-middle">
+                          <td key={dateStr} className="p-1 align-middle">
                             <button
                               type="button"
                               onMouseDown={
@@ -475,22 +976,21 @@ export default function AvailabilityDashboard({
                                       : "Unavailable, click to mark available"
                               }
                               className={`
-                                mq-slot
-                                ${!disabled && !readOnly ? "cursor-pointer" : ""}
-                                ${disabled ? "mq-slot-past cursor-not-allowed" : ""}
+                                relative flex items-center justify-center w-full h-8 rounded-md text-xs font-semibold transition-all duration-150
+                                ${!disabled && !readOnly ? "cursor-pointer active:scale-95" : ""}
+                                ${disabled ? "bg-navy-950 opacity-20 border border-transparent cursor-not-allowed" : ""}
                                 ${readOnly && !disabled ? "cursor-default" : ""}
-                                ${!disabled && enabled ? "mq-slot-on" : ""}
-                                ${!disabled && !enabled ? "mq-slot-off" : ""}
+                                ${!disabled && enabled ? "bg-primary-500 text-black font-bold border border-primary-400 shadow-sm" : ""}
+                                ${!disabled && !enabled ? "bg-navy-900 border border-white/[0.05] hover:bg-navy-800 hover:border-white/20 text-slate-500" : ""}
                               `}
                             >
                               {!disabled && enabled && (
-                                <span className="mq-slot-check" aria-hidden>
+                                <span className="flex items-center justify-center" aria-hidden>
                                   <svg
-                                    className="h-2 w-2 text-white/85"
+                                    className="h-3 w-3 text-black stroke-[3]"
                                     viewBox="0 0 12 12"
                                     fill="none"
                                     stroke="currentColor"
-                                    strokeWidth="2"
                                     strokeLinecap="round"
                                     strokeLinejoin="round"
                                   >
@@ -502,6 +1002,7 @@ export default function AvailabilityDashboard({
                           </td>
                         );
                       })}
+
                     </tr>
                   );
                 })}
@@ -513,3 +1014,5 @@ export default function AvailabilityDashboard({
     </div>
   );
 }
+
+

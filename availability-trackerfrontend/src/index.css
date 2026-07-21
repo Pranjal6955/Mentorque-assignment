@@ -12,8 +12,7 @@ body {
 
 @layer components {
   .mq-card {
-    @apply rounded-xl border border-white/[0.08] bg-white/[0.03] backdrop-blur-xl
-      shadow-[0_8px_32px_rgba(0,0,0,0.28),inset_0_1px_0_rgba(255,255,255,0.05)];
+    @apply rounded-xl border border-white/[0.08] bg-white/[0.03] backdrop-blur-xl;
   }
 
   .mq-label {
@@ -22,7 +21,7 @@ body {
 
   .mq-input {
     @apply w-full h-10 rounded-lg bg-navy-800 border border-white/[0.1] text-sm px-3
-      transition-colors focus:outline-none focus:ring-2 focus:ring-white/15 focus:border-white/20;
+      transition-colors focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent;
     color: #fafafa;
     color-scheme: dark;
   }
@@ -34,15 +33,14 @@ body {
   }
 
   .mq-btn-primary {
-    @apply inline-flex items-center justify-center h-10 px-5 rounded-lg bg-primary-600
-      hover:bg-primary-500 text-navy-950 text-sm font-semibold transition-colors
-      shadow-[0_1px_2px_rgba(0,0,0,0.2),inset_0_1px_0_rgba(255,255,255,0.9)]
+    @apply inline-flex items-center justify-center h-10 px-5 rounded-lg bg-primary-500
+      hover:bg-primary-400 active:bg-primary-400 text-black font-bold transition-colors
       disabled:opacity-40 disabled:cursor-not-allowed;
   }
 
   .mq-btn-secondary {
     @apply inline-flex items-center justify-center h-10 px-4 rounded-lg border border-white/[0.1]
-      bg-white/[0.04] text-sm font-medium hover:bg-white/[0.07] transition-colors
+      bg-white/[0.04] text-sm font-semibold hover:bg-white/[0.07] transition-colors
       disabled:opacity-40 disabled:cursor-not-allowed;
     color: #a1a1aa;
   }
@@ -71,13 +69,12 @@ body {
   }
 
   .mq-slot-on {
-    @apply bg-white/[0.22] hover:bg-white/[0.28] border border-white/30
-      shadow-[inset_0_1px_0_rgba(255,255,255,0.18)];
+    @apply bg-primary-500 hover:bg-primary-400 border border-primary-400;
   }
 
   .mq-slot-check {
     @apply flex h-3 w-3 shrink-0 items-center justify-center rounded-full
-      border border-white/35 bg-white/[0.14];
+      bg-black text-white;
   }
 
   .mq-slot-past {
