@@ -7,9 +7,13 @@ export async function listMeetings(req, res, next) {
     const where = {};
 
     if (req.userRole === "USER") {
-      where.userId = req.userId;
+      if (userId) where.userId = userId;
+      else if (mentorId) where.mentorId = mentorId;
+      else where.OR = [{ userId: req.userId }, { mentorId: req.userId }];
     } else if (req.userRole === "MENTOR") {
-      where.mentorId = req.userId;
+      if (mentorId) where.mentorId = mentorId;
+      else if (userId) where.userId = userId;
+      else where.OR = [{ mentorId: req.userId }, { userId: req.userId }];
     } else {
       if (userId) where.userId = userId;
       else if (mentorId) where.mentorId = mentorId;

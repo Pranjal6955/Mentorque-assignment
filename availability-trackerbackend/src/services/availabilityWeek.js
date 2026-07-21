@@ -326,18 +326,19 @@ export async function isAvailableBetween(owner, startTime, endTime) {
   }
   if (template.length === 0) return false;
 
+  const ws = getWeekStart(start);
+  const exceptions = await getExceptionsForWeek(owner, ws);
+  const excMap = exceptionsMap(exceptions);
+
   const cursor = new Date(start);
   cursor.setUTCMinutes(0, 0, 0);
 
   while (cursor < end) {
     const dateStr = cursor.toISOString().slice(0, 10);
     const hour = cursor.getUTCHours();
-    const ws = getWeekStart(cursor);
     const dow = dayOfWeekIndex(dateStr, ws);
     if (dow < 0) return false;
 
-    const exceptions = await getExceptionsForWeek(owner, ws);
-    const excMap = exceptionsMap(exceptions);
     if (!effectiveSlotEnabled(template, excMap, dow, hour)) return false;
 
     cursor.setUTCHours(cursor.getUTCHours() + 1);

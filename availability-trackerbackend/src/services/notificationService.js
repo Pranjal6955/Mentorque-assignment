@@ -57,13 +57,14 @@ export async function sendBookingNotification({ meetingId, eventType }) {
     const recipientList = Array.from(recipients);
 
     const isBooking = eventType === "MEETING_BOOKED";
+    const title = meeting?.title || "Mentoring Session";
     const subject = isBooking
-      ? `📅 [Confirmed] Mentoring Call: ${meeting?.title || "Session"}`
-      : `❌ [Cancelled] Mentoring Call Session`;
+      ? `📅 [Confirmed] Mentoring Call: ${title}`
+      : `❌ [Cancelled] Mentoring Call: ${title}`;
 
     const body = isBooking
-      ? `Hi there,\n\nYour mentoring session "${meeting.title}" has been successfully scheduled!\n\nCall Type: ${meeting.callType || "General Mentoring"}\nStart Time: ${meeting.startTime.toISOString()}\nEnd Time: ${meeting.endTime.toISOString()}\nUser: ${meeting.user?.name || "N/A"}\nMentor: ${meeting.mentor?.name || "N/A"}\n\nThank you,\nMentorque Team`
-      : `Hi there,\n\nA scheduled mentoring call has been cancelled by the Administrator.\n\nThank you,\nMentorque Team`;
+      ? `Hi there,\n\nYour mentoring session "${title}" has been successfully scheduled!\n\nCall Type: ${meeting?.callType || "General Mentoring"}\nStart Time: ${meeting?.startTime ? new Date(meeting.startTime).toLocaleString() : "N/A"}\nEnd Time: ${meeting?.endTime ? new Date(meeting.endTime).toLocaleString() : "N/A"}\nUser: ${meeting?.user?.name || "N/A"}\nMentor: ${meeting?.mentor?.name || "N/A"}\n\nThank you,\nMentorque Team`
+      : `Hi there,\n\nYour scheduled mentoring session "${title}" has been cancelled by the Administrator.\n\nParticipants: ${meeting?.user?.name || "User"} & ${meeting?.mentor?.name || "Mentor"}\nScheduled Time: ${meeting?.startTime ? new Date(meeting.startTime).toLocaleString() : "N/A"}\n\nThank you,\nMentorque Team`;
 
     const logEntry = {
       id: `notif_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
