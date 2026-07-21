@@ -241,6 +241,72 @@ export async function scheduleMeeting(req, res, next) {
       return res.status(400).json({ error: "endTime must be after startTime" });
     }
 
+    // 1. User Availability & Overlap Validation
+    if (userId) {
+      const user = await prisma.user.findUnique({ where: { id: userId } });
+      if (!user) {
+        return res.status(404).json({ error: "Selected user not found" });
+      }
+
+      const userOwner = { userId, mentorId: null, role: "USER" };
+      const userAvailable = await isAvailableBetween(userOwner, start, end);
+      if (!userAvailable) {
+        return res.status(400).json({
+          error: `User "${user.name}" is NOT available at the selected time slot. Please select a time slot when they have marked their availability.`,
+        });
+      }
+
+      const userOverlap = await prisma.meeting.findFirst({
+        where: {
+          OR: [
+            { userId: userId },
+            { mentorId: userId },
+            ...(user.email ? [{ participants: { some: { email: user.email } } }] : []),
+          ],
+          startTime: { lt: end },
+          endTime: { gt: start },
+        },
+      });
+      if (userOverlap) {
+        return res.status(400).json({
+          error: `User "${user.name}" already has an overlapping meeting ("${userOverlap.title}") scheduled at this time.`,
+        });
+      }
+    }
+
+    // 2. Mentor Availability & Overlap Validation
+    if (mentorId) {
+      const mentor = await prisma.user.findUnique({ where: { id: mentorId } });
+      if (!mentor) {
+        return res.status(404).json({ error: "Selected mentor not found" });
+      }
+
+      const mentorOwner = { userId: null, mentorId, role: "MENTOR" };
+      const mentorAvailable = await isAvailableBetween(mentorOwner, start, end);
+      if (!mentorAvailable) {
+        return res.status(400).json({
+          error: `Mentor "${mentor.name}" is NOT available at the selected time slot. Please select an available time slot.`,
+        });
+      }
+
+      const mentorOverlap = await prisma.meeting.findFirst({
+        where: {
+          OR: [
+            { mentorId: mentorId },
+            { userId: mentorId },
+            ...(mentor.email ? [{ participants: { some: { email: mentor.email } } }] : []),
+          ],
+          startTime: { lt: end },
+          endTime: { gt: start },
+        },
+      });
+      if (mentorOverlap) {
+        return res.status(400).json({
+          error: `Mentor "${mentor.name}" already has an overlapping meeting ("${mentorOverlap.title}") scheduled at this time.`,
+        });
+      }
+    }
+
     const emails = Array.isArray(participantEmails)
       ? participantEmails.map((e) => (typeof e === "string" ? e.trim() : "")).filter(Boolean)
       : [];

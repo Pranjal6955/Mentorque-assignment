@@ -30,7 +30,7 @@ export default function AddMentorModal({ onClose, onSuccess }) {
       onSuccess?.(mentor);
       onClose();
     } catch (err) {
-      setError(err.message || "Failed to create mentor");
+      setError(err.message || "Failed to create member");
     } finally {
       setLoading(false);
     }

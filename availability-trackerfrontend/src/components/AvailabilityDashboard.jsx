@@ -11,7 +11,197 @@ import {
   isSlotInPast,
 } from "../utils/time";
 import MqSelect from "./MqSelect";
-import { Calendar, Clock, Sparkles, Video, CheckCircle2, Zap, Trash2, User, ShieldCheck } from "lucide-react";
+import { Calendar, Clock, Sparkles, Video, CheckCircle2, Zap, Trash2, User, ShieldCheck, Eye } from "lucide-react";
+
+function MeetingDetailsModal({ meeting, displayTimezone, onClose }) {
+  if (!meeting) return null;
+
+  const isDone = new Date(meeting.endTime || meeting.startTime).getTime() <= Date.now();
+  const formattedDate = formatDateLocal(meeting.startTime, displayTimezone);
+  const startTimeStr = formatTimeLocal(meeting.startTime, displayTimezone);
+  const endTimeStr = formatTimeLocal(meeting.endTime || meeting.startTime, displayTimezone);
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-navy-950/80 backdrop-blur-md p-4 animate-in fade-in duration-200"
+      onClick={onClose}
+    >
+      <div
+        className="w-full max-w-lg rounded-2xl border border-white/[0.12] bg-navy-900 p-6 shadow-2xl space-y-5"
+        role="dialog"
+        aria-modal="true"
+        onClick={(e) => e.stopPropagation()}
+      >
+        {/* Header */}
+        <div className="flex items-center justify-between border-b border-white/[0.08] pb-4">
+          <div className="flex items-center gap-3">
+            <div
+              className={`w-11 h-11 rounded-xl flex items-center justify-center font-bold border ${
+                isDone
+                  ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/30"
+                  : "bg-primary-500/10 text-primary-400 border-primary-500/30"
+              }`}
+            >
+              {isDone ? (
+                <CheckCircle2 className="w-5 h-5 text-emerald-400" />
+              ) : (
+                <Video className="w-5 h-5 text-primary-400" />
+              )}
+            </div>
+            <div>
+              <div className="flex items-center gap-2">
+                <h3 className="text-base font-extrabold text-white">Scheduled Call Details</h3>
+                {isDone ? (
+                  <span className="text-[10px] font-extrabold px-2.5 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 flex items-center gap-1">
+                    <CheckCircle2 className="w-3 h-3 text-emerald-400" /> Completed
+                  </span>
+                ) : (
+                  <span className="text-[10px] font-extrabold px-2.5 py-0.5 rounded-full bg-indigo-500/20 text-indigo-300 border border-indigo-500/40 flex items-center gap-1">
+                    <Video className="w-3 h-3 text-indigo-400" /> Scheduled
+                  </span>
+                )}
+              </div>
+              {meeting.id && (
+                <p className="text-xs text-slate-400 font-mono mt-0.5">ID: {meeting.id}</p>
+              )}
+            </div>
+          </div>
+          <button
+            onClick={onClose}
+            className="w-8 h-8 rounded-xl bg-navy-950 text-slate-400 hover:text-white border border-white/[0.08] flex items-center justify-center font-bold transition-all hover:bg-navy-800"
+          >
+            ✕
+          </button>
+        </div>
+
+        {/* Body Details */}
+        <div className="space-y-4 text-xs">
+          {/* Title */}
+          <div>
+            <label className="text-[11px] font-bold text-slate-400 uppercase tracking-wider block mb-1">
+              Call Title
+            </label>
+            <div className="p-3 bg-navy-950 border border-white/[0.08] rounded-xl font-semibold text-sm text-white">
+              {meeting.title || "Mentoring Session"}
+            </div>
+          </div>
+
+          {/* Call Requirement / Type & Date */}
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="text-[11px] font-bold text-slate-400 uppercase tracking-wider block mb-1">
+                Call Requirement
+              </label>
+              <div className="p-2.5 bg-navy-950 border border-white/[0.08] rounded-xl font-bold text-xs text-primary-300">
+                {meeting.callType ? meeting.callType.replace("_", " ") : "General Mentoring"}
+              </div>
+            </div>
+            <div>
+              <label className="text-[11px] font-bold text-slate-400 uppercase tracking-wider block mb-1">
+                Date ({displayTimezone})
+              </label>
+              <div className="p-2.5 bg-navy-950 border border-white/[0.08] rounded-xl font-medium text-xs text-white flex items-center gap-2">
+                <Calendar className="w-3.5 h-3.5 text-primary-400" />
+                <span>{formattedDate}</span>
+              </div>
+            </div>
+          </div>
+
+          {/* Time Slot */}
+          <div>
+            <label className="text-[11px] font-bold text-slate-400 uppercase tracking-wider block mb-1">
+              Time Slot ({displayTimezone})
+            </label>
+            <div className="p-3 bg-navy-950 border border-white/[0.08] rounded-xl font-mono text-xs text-slate-200 flex items-center gap-2">
+              <Clock className="w-4 h-4 text-emerald-400" />
+              <span>
+                {startTimeStr} – {endTimeStr}
+              </span>
+            </div>
+          </div>
+
+          {/* User / Mentee */}
+          {meeting.user && (
+            <div>
+              <label className="text-[11px] font-bold text-slate-400 uppercase tracking-wider block mb-1">
+                Mentee / User
+              </label>
+              <div className="p-3 bg-navy-950 border border-white/[0.08] rounded-xl flex items-center gap-3">
+                <div className="w-8 h-8 rounded-lg bg-emerald-500/10 text-emerald-400 border border-emerald-500/30 flex items-center justify-center font-bold text-xs">
+                  {meeting.user.name ? meeting.user.name[0].toUpperCase() : <User className="w-4 h-4" />}
+                </div>
+                <div>
+                  <p className="font-bold text-white text-xs">{meeting.user.name}</p>
+                  {meeting.user.email && (
+                    <p className="text-[11px] text-slate-400 font-mono">{meeting.user.email}</p>
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Mentor */}
+          {meeting.mentor && (
+            <div>
+              <label className="text-[11px] font-bold text-slate-400 uppercase tracking-wider block mb-1">
+                Assigned Mentor
+              </label>
+              <div className="p-3 bg-navy-950 border border-white/[0.08] rounded-xl flex items-center gap-3">
+                <div className="w-8 h-8 rounded-lg bg-primary-500/10 text-primary-400 border border-primary-500/30 flex items-center justify-center font-bold text-xs">
+                  {meeting.mentor.name ? meeting.mentor.name[0].toUpperCase() : <User className="w-4 h-4" />}
+                </div>
+                <div>
+                  <p className="font-bold text-white text-xs">{meeting.mentor.name}</p>
+                  {meeting.mentor.email && (
+                    <p className="text-[11px] text-slate-400 font-mono">{meeting.mentor.email}</p>
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Participants */}
+          {meeting.participants && meeting.participants.length > 0 && (
+            <div>
+              <label className="text-[11px] font-bold text-slate-400 uppercase tracking-wider block mb-1">
+                Participants ({meeting.participants.length})
+              </label>
+              <div className="space-y-1.5 max-h-32 overflow-y-auto pr-1">
+                {meeting.participants.map((p, idx) => (
+                  <div
+                    key={idx}
+                    className="p-2.5 bg-navy-950 border border-white/[0.08] rounded-xl flex items-center justify-between gap-2"
+                  >
+                    <div className="flex items-center gap-2.5 min-w-0">
+                      <div className="w-7 h-7 rounded-lg bg-navy-800 text-slate-300 border border-navy-700 flex items-center justify-center text-xs font-bold shrink-0">
+                        {p.name ? p.name[0].toUpperCase() : <User className="w-3.5 h-3.5" />}
+                      </div>
+                      <div className="min-w-0">
+                        <p className="text-xs font-semibold text-white truncate">{p.name || "Participant"}</p>
+                        <p className="text-[11px] text-slate-400 font-mono truncate">{p.email}</p>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* Footer */}
+        <div className="flex justify-end border-t border-white/[0.08] pt-3.5">
+          <button
+            type="button"
+            onClick={onClose}
+            className="px-5 py-2 text-xs font-bold text-slate-300 hover:text-white bg-navy-950 hover:bg-navy-800 border border-white/[0.08] rounded-xl transition-all"
+          >
+            Close
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
 
 const HOURS = Array.from({ length: 24 }, (_, i) => i);
 
@@ -256,6 +446,7 @@ export default function AvailabilityDashboard({
   const [customModalOpen, setCustomModalOpen] = useState(false);
   const [toggles, setToggles] = useState({});
 
+  const [selectedMeetingDetails, setSelectedMeetingDetails] = useState(null);
   const [error, setError] = useState("");
   const [nowMs, setNowMs] = useState(() => Date.now());
   const dragRef = useRef({ active: false, paintValue: false, visited: new Set() });
@@ -663,6 +854,12 @@ export default function AvailabilityDashboard({
         </div>
       )}
 
+      <MeetingDetailsModal
+        meeting={selectedMeetingDetails}
+        displayTimezone={displayTimezone}
+        onClose={() => setSelectedMeetingDetails(null)}
+      />
+
       {/* Booked Meetings Section */}
       {!embedded && myMeetings.length > 0 && (
         <section className="mq-card p-5">
@@ -677,36 +874,44 @@ export default function AvailabilityDashboard({
               return (
                 <div
                   key={m.id}
-                  className={`rounded-lg border p-4 transition ${
+                  onClick={() => setSelectedMeetingDetails(m)}
+                  className={`group relative rounded-lg border p-4 transition cursor-pointer hover:shadow-lg hover:scale-[1.01] ${
                     isDone
-                      ? "border-emerald-500/40 bg-emerald-950/20 hover:border-emerald-400/60"
-                      : "border-white/[0.08] bg-navy-800 hover:border-primary-500/30"
+                      ? "border-emerald-500/40 bg-emerald-950/20 hover:border-emerald-400"
+                      : "border-white/[0.08] bg-navy-800 hover:border-primary-500/50"
                   }`}
                 >
                   <div className="flex items-start justify-between gap-2">
-                    <h4 className="font-semibold text-ink-50 text-sm line-clamp-1">{m.title}</h4>
+                    <h4 className="font-semibold text-ink-50 text-sm line-clamp-1 group-hover:text-primary-300 transition-colors">
+                      {m.title}
+                    </h4>
                     {isDone ? (
-                      <span className="text-[10px] font-extrabold uppercase px-2.5 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 flex items-center gap-1">
+                      <span className="text-[10px] font-extrabold uppercase px-2.5 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 flex items-center gap-1 shrink-0">
                         <CheckCircle2 className="w-3 h-3 text-emerald-400" />
                         Completed
                       </span>
                     ) : m.callType ? (
-                      <span className="text-[10px] font-semibold uppercase px-2 py-0.5 rounded-full bg-primary-500/20 text-primary-300">
+                      <span className="text-[10px] font-semibold uppercase px-2 py-0.5 rounded-full bg-primary-500/20 text-primary-300 shrink-0">
                         {m.callType.replace("_", " ")}
                       </span>
                     ) : (
-                      <span className="text-[10px] font-semibold uppercase px-2 py-0.5 rounded-full bg-blue-500/20 text-blue-300">
+                      <span className="text-[10px] font-semibold uppercase px-2 py-0.5 rounded-full bg-blue-500/20 text-blue-300 shrink-0">
                         Scheduled
                       </span>
                     )}
                   </div>
                   <p className="text-xs text-ink-400 mt-2 flex items-center gap-1.5">
                     <Clock className="w-3.5 h-3.5 text-ink-500" />
-                    {formatDateLocal(m.startTime, displayTimezone)} ({new Date(m.startTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })})
+                    {formatDateLocal(m.startTime, displayTimezone)} ({formatTimeLocal(m.startTime, displayTimezone)})
                   </p>
-                  <div className="mt-3 pt-3 border-t border-white/[0.04] text-xs text-ink-400 space-y-1">
-                    {m.user && <p><span className="text-ink-600">User:</span> {m.user.name}</p>}
-                    {m.mentor && <p><span className="text-ink-600">Mentor:</span> {m.mentor.name}</p>}
+                  <div className="mt-3 pt-3 border-t border-white/[0.04] text-xs text-ink-400 space-y-1 flex items-center justify-between">
+                    <div>
+                      {m.user && <p><span className="text-ink-600">User:</span> {m.user.name}</p>}
+                      {m.mentor && <p><span className="text-ink-600">Mentor:</span> {m.mentor.name}</p>}
+                    </div>
+                    <span className="text-[11px] font-bold text-primary-400 group-hover:underline flex items-center gap-1 shrink-0">
+                      <Eye className="w-3.5 h-3.5" /> Details
+                    </span>
                   </div>
                 </div>
               );
@@ -924,12 +1129,14 @@ export default function AvailabilityDashboard({
                         if (bookedMeeting) {
                           return (
                             <td key={dateStr} className="p-1 align-middle">
-                              <div
-                                title={`Scheduled Call: ${bookedMeeting.title}${bookedMeeting.user ? ` (User: ${bookedMeeting.user.name})` : ""}${bookedMeeting.mentor ? ` (Mentor: ${bookedMeeting.mentor.name})` : ""}`}
-                                className={`relative flex items-center justify-center w-full h-8 rounded-md text-[11px] font-extrabold shadow-md transition-all border ${
+                              <button
+                                type="button"
+                                onClick={() => setSelectedMeetingDetails(bookedMeeting)}
+                                title={`Click to view meeting details: ${bookedMeeting.title}${bookedMeeting.user ? ` (User: ${bookedMeeting.user.name})` : ""}${bookedMeeting.mentor ? ` (Mentor: ${bookedMeeting.mentor.name})` : ""}`}
+                                className={`relative flex items-center justify-center w-full h-8 rounded-md text-[11px] font-extrabold shadow-md transition-all border cursor-pointer hover:scale-[1.04] active:scale-95 ${
                                   isMeetingDone
-                                    ? "bg-emerald-500 text-black border-emerald-400 ring-2 ring-emerald-500/40"
-                                    : "bg-indigo-600 text-white border-indigo-400 ring-2 ring-indigo-500/50"
+                                    ? "bg-emerald-500 text-black border-emerald-400 ring-2 ring-emerald-500/40 hover:bg-emerald-400 hover:shadow-emerald-500/20"
+                                    : "bg-indigo-600 text-white border-indigo-400 ring-2 ring-indigo-500/50 hover:bg-indigo-500 hover:shadow-indigo-500/30"
                                 }`}
                               >
                                 <span className="flex items-center gap-1 truncate px-1">
@@ -945,7 +1152,7 @@ export default function AvailabilityDashboard({
                                     </>
                                   )}
                                 </span>
-                              </div>
+                              </button>
                             </td>
                           );
                         }

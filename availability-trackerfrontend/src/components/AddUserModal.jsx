@@ -30,7 +30,7 @@ export default function AddUserModal({ onClose, onSuccess }) {
       onSuccess?.(user);
       onClose();
     } catch (err) {
-      setError(err.message || "Failed to create user");
+      setError(err.message || "Failed to create member");
     } finally {
       setLoading(false);
     }

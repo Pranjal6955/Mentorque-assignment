@@ -65,9 +65,9 @@ async function main() {
     },
   ];
 
-  // Default standard week template slots (Mon-Fri 09:00 - 17:00)
+  // Default standard week template slots (Mon-Sun 09:00 - 17:00, 0 = Mon to 6 = Sun)
   const defaultSlots = [];
-  for (let day = 1; day <= 5; day++) {
+  for (let day = 0; day < 7; day++) {
     for (let hour = 9; hour < 17; hour++) {
       defaultSlots.push({ dayOfWeek: day, hour, enabled: true });
     }

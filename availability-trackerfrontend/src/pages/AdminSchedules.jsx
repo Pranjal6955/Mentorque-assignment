@@ -32,7 +32,7 @@ export default function AdminSchedules() {
           setMentors(m);
         }
       } catch (e) {
-        if (!cancelled) setError(e.message || "Failed to load people");
+        if (!cancelled) setError(e.message || "Failed to load members");
       } finally {
         if (!cancelled) setLoading(false);
       }
@@ -84,7 +84,7 @@ export default function AdminSchedules() {
         <div className="min-w-0">
           <h1 className="text-xl font-semibold tracking-tight text-ink-50">Team availability</h1>
           <p className="mt-0.5 text-sm text-ink-500">
-            View and edit weekly schedules for any user or mentor.
+            View and edit weekly schedules for any team member.
           </p>
         </div>
         <div className="grid w-full min-w-0 grid-cols-1 gap-3 sm:grid-cols-2 lg:w-auto lg:shrink-0">
@@ -94,7 +94,7 @@ export default function AdminSchedules() {
             value={selectedUserId}
             onChange={onUserChange}
             disabled={loading}
-            placeholder="Select user…"
+            placeholder="Select member…"
             options={users.map((u) => ({
               value: u.id,
               label: personLabel(u),

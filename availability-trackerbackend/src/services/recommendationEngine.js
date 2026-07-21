@@ -56,16 +56,68 @@ function computeCosineSimilarity(vecA, vecB) {
 }
 
 /**
+ * Provider availability flags — probed once at startup (silently).
+ * By the time the first request arrives, all flags are already resolved.
+ */
+let _openrouterAvailable = false;
+let _hfAvailable = false;
+let _probeComplete = false;
+
+async function probeProviders() {
+  if (_probeComplete) return;
+  _probeComplete = true;
+
+  const hfKey = process.env.HUGGINGFACE_API_KEY;
+  const openrouterKey = process.env.OPENROUTER_API_KEY;
+
+  // Probe OpenRouter with a lightweight ping
+  if (openrouterKey) {
+    try {
+      const res = await fetch("https://openrouter.ai/api/v1/models", {
+        headers: { Authorization: `Bearer ${openrouterKey}` },
+        signal: AbortSignal.timeout(4000),
+      });
+      _openrouterAvailable = res.ok;
+    } catch {
+      _openrouterAvailable = false;
+    }
+  }
+
+  // Probe HuggingFace with a lightweight ping
+  if (hfKey) {
+    try {
+      const res = await fetch(
+        "https://api-inference.huggingface.co/pipeline/feature-extraction/sentence-transformers/all-MiniLM-L6-v2",
+        {
+          method: "POST",
+          headers: { Authorization: `Bearer ${hfKey}`, "Content-Type": "application/json" },
+          body: JSON.stringify({ inputs: "test", options: { wait_for_model: false } }),
+          signal: AbortSignal.timeout(4000),
+        }
+      );
+      _hfAvailable = res.ok;
+    } catch {
+      _hfAvailable = false;
+    }
+  }
+
+  const active = _openrouterAvailable ? "OpenRouter" : _hfAvailable ? "HuggingFace" : "Local RAG";
+  console.log(`[Mentorque] Embedding provider: ${active}`);
+}
+
+// Fire probe at module load — non-blocking
+probeProviders().catch(() => {});
+
+/**
  * Get embedding vector for a given text via Hugging Face API, OpenAI API, or local term-vector fallback.
  */
 async function fetchTextEmbedding(text) {
   const hfKey = process.env.HUGGINGFACE_API_KEY;
   const openrouterKey = process.env.OPENROUTER_API_KEY;
 
-  // 1. OpenRouter API (Free Model Embedding endpoint)
-  if (openrouterKey) {
+  // 1. OpenRouter API
+  if (openrouterKey && _openrouterAvailable) {
     try {
-      // Try OpenRouter Free Embedding Model endpoint
       const response = await fetch("https://openrouter.ai/api/v1/embeddings", {
         method: "POST",
         headers: {
@@ -79,7 +131,6 @@ async function fetchTextEmbedding(text) {
           input: text,
         }),
       });
-
       if (response.ok) {
         const data = await response.json();
         if (data?.data?.[0]?.embedding) {
@@ -87,7 +138,6 @@ async function fetchTextEmbedding(text) {
         }
       }
 
-      // Fallback: If embeddings endpoint returns text, query OpenRouter Chat Completions with free model
       const chatRes = await fetch("https://openrouter.ai/api/v1/chat/completions", {
         method: "POST",
         headers: {
@@ -106,7 +156,6 @@ async function fetchTextEmbedding(text) {
           ],
         }),
       });
-
       if (chatRes.ok) {
         const chatData = await chatRes.json();
         const content = chatData?.choices?.[0]?.message?.content || "";
@@ -115,49 +164,55 @@ async function fetchTextEmbedding(text) {
         extractedTokens.forEach((t) => vectorMap.set(t, (vectorMap.get(t) || 0) + 1));
         return { vector: vectorMap, provider: "OpenRouter Free AI Model (Llama-3.2)" };
       }
-    } catch (e) {
-      console.warn("OpenRouter free model fetch failed, trying fallback vectorizer:", e.message);
+    } catch {
+      // silent — flag already set by startup probe
     }
   }
 
-
-  // 2. HuggingFace Inference API (Free sentence-transformers embedding)
-  if (hfKey) {
+  // 2. HuggingFace Inference API
+  if (hfKey && _hfAvailable) {
     try {
       const response = await fetch(
         "https://api-inference.huggingface.co/pipeline/feature-extraction/sentence-transformers/all-MiniLM-L6-v2",
         {
           method: "POST",
-          headers: {
-            Authorization: `Bearer ${hfKey}`,
-            "Content-Type": "application/json",
-          },
+          headers: { Authorization: `Bearer ${hfKey}`, "Content-Type": "application/json" },
           body: JSON.stringify({ inputs: text, options: { wait_for_model: true } }),
         }
       );
       if (response.ok) {
         const data = await response.json();
         if (Array.isArray(data)) {
-          // If multi-token 2D array returned, pool mean vector
           const vector = Array.isArray(data[0])
             ? data[0].map((_, col) => data.reduce((sum, row) => sum + row[col], 0) / data.length)
             : data;
           return { vector, provider: "Hugging Face AI Embedding" };
         }
       }
-    } catch (e) {
-      console.warn("HuggingFace embedding fetch failed, using fallback vectorizer:", e.message);
+    } catch {
+      // silent — flag already set by startup probe
     }
   }
 
-
-  // 3. Local TF-IDF Dense Frequency Map Vectorizer (Zero-dependency fallback)
+  // 3. Local TF-IDF Dense Frequency Map Vectorizer (always available)
   const tokens = Array.from(extractKeywords(text));
   const vectorMap = new Map();
-  tokens.forEach((t) => {
-    vectorMap.set(t, (vectorMap.get(t) || 0) + 1);
-  });
+  tokens.forEach((t) => { vectorMap.set(t, (vectorMap.get(t) || 0) + 1); });
   return { vector: vectorMap, provider: "Dense Semantic Vector (Local RAG)" };
+}
+
+function extractSlotKeysFromWeeklyAvail(availResult) {
+  const keys = new Set();
+  const dateStrs = availResult?.dates || [];
+  const availability = availResult?.availability || {};
+  dateStrs.forEach((dateStr, dayOfWeek) => {
+    const daySlots = availability[dateStr] || [];
+    daySlots.forEach((slot) => {
+      const hour = new Date(slot.startTime).getUTCHours();
+      keys.add(`${dayOfWeek}_${hour}`);
+    });
+  });
+  return keys;
 }
 
 /**
@@ -182,9 +237,7 @@ export async function getMentorRecommendations({ userId, callType, weekStart }) 
 
   // Load User availability grid
   const userAvail = await loadWeeklyAvailability({ userId: user.id, mentorId: null, role: "USER" }, weekStartDate);
-  const userSlotKeys = new Set(
-    (userAvail.slots || []).filter((s) => s.enabled).map((s) => `${s.dayOfWeek}_${s.hour}`)
-  );
+  const userSlotKeys = extractSlotKeysFromWeeklyAvail(userAvail);
 
   const isUserTech = user.tags.includes("Tech");
   const isUserNonTech = user.tags.includes("Non-tech");
@@ -250,7 +303,7 @@ export async function getMentorRecommendations({ userId, callType, weekStart }) 
 
     // 4. Availability Overlap Check
     const mentorAvail = await loadWeeklyAvailability({ userId: null, mentorId: mentor.id, role: "MENTOR" }, weekStartDate);
-    const mentorSlotKeys = (mentorAvail.slots || []).filter((s) => s.enabled).map((s) => `${s.dayOfWeek}_${s.hour}`);
+    const mentorSlotKeys = Array.from(extractSlotKeysFromWeeklyAvail(mentorAvail));
 
     let overlappingSlotsCount = 0;
     const overlappingSlots = [];
@@ -290,16 +343,16 @@ export async function getMentorRecommendations({ userId, callType, weekStart }) 
     return b.matchScore - a.matchScore;
   });
 
-  // If mentors with overlapping available slots exist, strictly return available mentors
+  // Return all recommendations sorted by overlap status then match score
   const availableRecommendations = recommendations.filter((r) => r.hasOverlap);
-  const finalRecommendations = availableRecommendations.length > 0 ? availableRecommendations : recommendations;
 
   return {
     user,
     callType,
     weekStart: weekStartDate,
     embeddingProvider: provider,
-    recommendations: finalRecommendations,
+    recommendations,
+    availableRecommendations,
     totalMentorsEvaluated: mentors.length,
     hasAvailableMatches: availableRecommendations.length > 0,
   };

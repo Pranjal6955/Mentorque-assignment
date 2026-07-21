@@ -33,6 +33,7 @@ import {
   Lock,
   Mail,
   Shield,
+  ChevronRight,
 } from "lucide-react";
 
 const TIMEZONE_OPTIONS = [
@@ -53,6 +54,88 @@ const SCHEDULE_AMPM_OPTIONS = ["AM", "PM"];
 const scheduleTimeSelectClass =
   "min-w-0 flex-1 box-border rounded-lg bg-navy-950 border border-navy-700 text-white px-2.5 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 appearance-none";
 
+/**
+ * Utility to convert a slot ({ dayOfWeek: 0..6, hour: 0..23 }) and weekStart string (YYYY-MM-DD)
+ * into formatted date, start/end hour strings, AM/PM, and time label.
+ */
+function getSlotDateTime(slot, weekStartStr) {
+  if (!slot) {
+    return {
+      dateStr: "",
+      startHour: "10",
+      startAmPm: "AM",
+      endHour: "11",
+      endAmPm: "AM",
+      label: "10:00 AM – 11:00 AM",
+    };
+  }
+
+  try {
+    const dayOfWeek = typeof slot.dayOfWeek === "number" ? slot.dayOfWeek : 0;
+    const hour = typeof slot.hour === "number" ? slot.hour : 10;
+
+    let baseDate = DateTime.fromISO(weekStartStr || DateTime.now().toFormat("yyyy-MM-dd"), { zone: "utc" });
+    if (!baseDate.isValid) {
+      baseDate = DateTime.now().toUTC();
+    }
+
+    const slotDate = baseDate.plus({ days: dayOfWeek }).set({ hour, minute: 0, second: 0, millisecond: 0 });
+    const endDate = slotDate.plus({ hours: 1 });
+
+    const formatHour12 = (dt) => {
+      const h = dt.hour % 12;
+      return String(h === 0 ? 12 : h);
+    };
+
+    const dateStr = slotDate.toFormat("yyyy-MM-dd");
+    const startHour = formatHour12(slotDate);
+    const startAmPm = slotDate.toFormat("a");
+    const endHour = formatHour12(endDate);
+    const endAmPm = endDate.toFormat("a");
+
+    const startLabel = slotDate.toFormat("h:mm a");
+    const endLabel = endDate.toFormat("h:mm a");
+    const dayName = slotDate.toFormat("ccc");
+    const label = `${dayName} ${startLabel} – ${endLabel}`;
+
+    return {
+      dateStr,
+      startHour,
+      startAmPm,
+      endHour,
+      endAmPm,
+      label,
+    };
+  } catch (err) {
+    console.error("Error in getSlotDateTime:", err);
+    return {
+      dateStr: weekStartStr || "",
+      startHour: "10",
+      startAmPm: "AM",
+      endHour: "11",
+      endAmPm: "AM",
+      label: "10:00 AM – 11:00 AM",
+    };
+  }
+}
+
+function sanitizeMatchReason(reason) {
+  if (!reason || typeof reason !== "string") return reason;
+  let cleaned = reason
+    .replace(/Dense Semantic Vector\s*\(Local RAG\)\s*/gi, "")
+    .replace(/RAG similarity:\s*/gi, "")
+    .replace(/RAG\s*/gi, "")
+    .replace(/Local\s*/gi, "")
+    .replace(/Dense Semantic Vector\s*/gi, "")
+    .replace(/\(\+\d+\s*pts?\)\s*/gi, "")
+    .replace(/\(\-\d+\s*pts?\)\s*/gi, "")
+    .replace(/[+-]\d+\s*pts?\.?\s*/gi, "")
+    .replace(/\d+%\s*match/gi, (m) => m.replace(/match/i, "alignment"))
+    .replace(/\s{2,}/g, " ")
+    .trim();
+  return cleaned || reason;
+}
+
 export default function AdminDashboard() {
   const { user: authUser } = useAuth();
   const [users, setUsers] = useState([]);
@@ -67,6 +150,7 @@ export default function AdminDashboard() {
   const [userSearchQuery, setUserSearchQuery] = useState("");
   const [showUserSelectModal, setShowUserSelectModal] = useState(false);
   const [userModalPage, setUserModalPage] = useState(1);
+  const [slotModalRec, setSlotModalRec] = useState(null);
   
   // Scheduled Meetings Actions state
   const [meetingSearchQuery, setMeetingSearchQuery] = useState("");
@@ -90,6 +174,7 @@ export default function AdminDashboard() {
   // Recommendations state
   const [recommendations, setRecommendations] = useState([]);
   const [loadingRecs, setLoadingRecs] = useState(false);
+  const [overlapOnlyFilter, setOverlapOnlyFilter] = useState(false);
   
   // Availability state
   const [weekStart, setWeekStart] = useState(() => {
@@ -154,9 +239,6 @@ export default function AdminDashboard() {
       const [u, m] = await Promise.all([adminApi.listUsers(), adminApi.listMentors()]);
       setUsers(u);
       setMentors(m);
-      if (u.length > 0 && !selectedUser) {
-        setSelectedUser(u[0]);
-      }
     } catch (e) {
       setError(e.message || "Failed to load members");
     }
@@ -271,6 +353,8 @@ export default function AdminDashboard() {
     if (selectedMentor) setMentorEmail(selectedMentor.email);
   }, [selectedMentor]);
 
+  const [selectedSlotKey, setSelectedSlotKey] = useState("");
+
   const handleSelectMentorForCall = (rec, specificSlot = null) => {
     setSelectedMentor(rec.mentor);
     setMentorEmail(rec.mentor.email);
@@ -279,6 +363,7 @@ export default function AdminDashboard() {
     const slotToUse = specificSlot || (rec.overlappingSlots && rec.overlappingSlots.length > 0 ? rec.overlappingSlots[0] : null);
 
     if (slotToUse) {
+      setSelectedSlotKey(`${rec.mentor.id}_${slotToUse.dayOfWeek}_${slotToUse.hour}`);
       const slotInfo = getSlotDateTime(slotToUse, weekStart);
       setScheduleDate(slotInfo.dateStr);
       setScheduleStartHour(slotInfo.startHour);
@@ -288,6 +373,7 @@ export default function AdminDashboard() {
       setScheduleEndMinute("00");
       setScheduleEndAmPm(slotInfo.endAmPm);
     } else {
+      setSelectedSlotKey("");
       const tmrw = DateTime.now().plus({ days: 1 }).toFormat("yyyy-MM-dd");
       setScheduleDate(tmrw);
       setScheduleStartHour("10");
@@ -539,7 +625,25 @@ export default function AdminDashboard() {
         {/* Tab Selection */}
         <div className="flex items-center gap-2 bg-navy-950 p-1.5 rounded-xl border border-navy-800">
           <button
-            onClick={() => setActiveTab("recommendations")}
+            onClick={() => {
+              setActiveTab("recommendations");
+              setSelectedUser(null);
+              setSelectedMentor(null);
+              setRecommendations([]);
+              setSelectedSlotKey("");
+              setOverlapOnlyFilter(false);
+              setScheduleTitle("");
+              setScheduleDate("");
+              setScheduleStartHour("");
+              setScheduleStartMinute("");
+              setScheduleStartAmPm("");
+              setScheduleEndHour("");
+              setScheduleEndMinute("");
+              setScheduleEndAmPm("");
+              setUserEmail("");
+              setMentorEmail("");
+              setScheduleInlineError("");
+            }}
             className={`px-4 py-2 text-sm font-bold rounded-lg transition-all flex items-center gap-2 ${
               activeTab === "recommendations"
                 ? "bg-primary-500 text-black"
@@ -589,43 +693,47 @@ export default function AdminDashboard() {
 
       {/* TAB 1: AI RECOMMENDATION & BOOKING HUB */}
       {activeTab === "recommendations" && (
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          {/* Left Column: Selector & Recommendations */}
-          <div className="lg:col-span-2 space-y-6">
-            {/* 1. SELECT TARGET USER & CALL CATEGORY (OPTION 1: Interactive Visual Cards) */}
-            <div className="bg-navy-900 border border-navy-700/80 rounded-2xl p-5 space-y-6 shadow-xl">
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-navy-800 pb-3">
-                <h2 className="text-base font-bold text-white flex items-center gap-2">
-                  <User className="w-5 h-5 text-primary-400" />
-                  <span>1. Select User & Call Category</span>
-                </h2>
-                {selectedUser && (
-                  <span className="text-xs text-emerald-400 bg-emerald-500/10 border border-emerald-500/30 px-3 py-1 rounded-full font-bold flex items-center gap-1.5 self-start sm:self-auto">
-                    <CheckCircle2 className="w-3.5 h-3.5" />
-                    Selected: {selectedUser.name}
-                  </span>
-                )}
-              </div>
+        <div className="space-y-6">
 
-              {/* TARGET USER SELECTION MODAL TRIGGER & DISPLAY */}
-              <div className="space-y-3">
+          {/* Upper Hero Panel: Step 1 - User Selection & Call Category */}
+          <div className="bg-navy-900 border border-navy-700/80 rounded-2xl p-5 space-y-5 shadow-xl">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-navy-800 pb-3">
+              <h2 className="text-base font-bold text-white flex items-center gap-2">
+                <User className="w-5 h-5 text-primary-400" />
+                <span>1. Select User & Call Category</span>
+              </h2>
+              {selectedUser && (
+                <span className="text-xs text-emerald-400 bg-emerald-500/10 border border-emerald-500/30 px-3 py-1 rounded-full font-bold flex items-center gap-1.5 self-start sm:self-auto">
+                  <CheckCircle2 className="w-3.5 h-3.5" />
+                  Target User: {selectedUser.name}
+                </span>
+              )}
+            </div>
+
+            <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 items-start">
+              {/* Target User Selection Card */}
+              <div className="lg:col-span-5 space-y-2">
                 <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider">
-                  Select User
+                  Select a Member
                 </label>
 
                 {!selectedUser ? (
                   <button
                     type="button"
                     onClick={() => setShowUserSelectModal(true)}
-                    className="w-full bg-navy-950 border border-dashed border-navy-700 hover:border-primary-500/60 hover:bg-navy-900/60 rounded-2xl p-4 text-left transition-all flex items-center justify-between group"
+                    className="w-full bg-navy-950 border border-dashed border-navy-700 hover:border-primary-500/60 hover:bg-navy-900/60 rounded-2xl p-4 text-left transition-all flex items-center justify-between group min-h-[92px] h-full"
                   >
                     <div className="flex items-center gap-3">
                       <div className="w-10 h-10 rounded-xl bg-primary-500/10 text-primary-400 border border-primary-500/30 flex items-center justify-center font-bold">
                         <UserPlus className="w-5 h-5" />
                       </div>
                       <div>
-                        <h4 className="font-bold text-white text-sm group-hover:text-primary-300 transition-colors">Select User</h4>
-                        <p className="text-xs text-slate-400">Click to choose from workspace users directory ({users.length} available)</p>
+                        <h4 className="font-bold text-white text-sm group-hover:text-primary-300 transition-colors">
+                          Select User
+                        </h4>
+                        <p className="text-xs text-slate-400">
+                          Click to select from {users.length} registered users
+                        </p>
                       </div>
                     </div>
                     <span className="text-xs font-bold text-primary-400 bg-primary-500/10 border border-primary-500/30 px-3.5 py-1.5 rounded-xl group-hover:bg-primary-500 group-hover:text-black transition-all">
@@ -633,10 +741,12 @@ export default function AdminDashboard() {
                     </span>
                   </button>
                 ) : (
-                  <div className="bg-navy-950 border border-emerald-500/40 rounded-2xl p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-lg">
-                    <div className="flex items-center gap-3.5 min-w-0">
-                      <div className="w-11 h-11 rounded-xl bg-emerald-500 text-black border border-emerald-400 font-extrabold flex items-center justify-center text-sm shrink-0">
-                        {selectedUser.name ? selectedUser.name.split(" ").map((n) => n[0]).slice(0, 2).join("").toUpperCase() : "U"}
+                  <div className="bg-navy-950 border border-emerald-500/40 rounded-2xl p-3.5 flex items-center justify-between gap-3 shadow-lg min-h-[92px] h-full">
+                    <div className="flex items-center gap-3 min-w-0">
+                      <div className="w-10 h-10 rounded-xl bg-emerald-500 text-black border border-emerald-400 font-extrabold flex items-center justify-center text-sm shrink-0">
+                        {selectedUser.name
+                          ? selectedUser.name.split(" ").map((n) => n[0]).slice(0, 2).join("").toUpperCase()
+                          : "U"}
                       </div>
                       <div className="min-w-0">
                         <div className="flex items-center gap-2">
@@ -647,9 +757,12 @@ export default function AdminDashboard() {
                         </div>
                         <p className="text-xs text-slate-400 font-mono truncate mt-0.5">{selectedUser.email}</p>
                         {selectedUser.tags && selectedUser.tags.length > 0 && (
-                          <div className="flex flex-wrap gap-1 pt-1.5">
-                            {selectedUser.tags.map((t, i) => (
-                              <span key={i} className="text-[10px] bg-navy-900 text-emerald-300 px-2 py-0.5 rounded-md border border-navy-700 font-medium">
+                          <div className="flex flex-wrap gap-1 pt-1">
+                            {selectedUser.tags.slice(0, 3).map((t, i) => (
+                              <span
+                                key={i}
+                                className="text-[10px] bg-navy-900 text-emerald-300 px-1.5 py-0.5 rounded border border-navy-700 font-medium truncate max-w-[90px]"
+                              >
                                 {t}
                               </span>
                             ))}
@@ -661,16 +774,16 @@ export default function AdminDashboard() {
                     <button
                       type="button"
                       onClick={() => setShowUserSelectModal(true)}
-                      className="text-xs font-bold text-slate-300 hover:text-white bg-navy-900 hover:bg-navy-800 border border-navy-700 px-4 py-2 rounded-xl transition-all shrink-0 self-end sm:self-center"
+                      className="text-xs font-bold text-slate-300 hover:text-white bg-navy-900 hover:bg-navy-800 border border-navy-700 px-3 py-1.5 rounded-xl transition-all shrink-0"
                     >
-                      Change User ▾
+                      Change ▾
                     </button>
                   </div>
                 )}
               </div>
 
-              {/* CALL CATEGORY REQUIREMENT SELECTION CARDS */}
-              <div className="space-y-3 pt-2 border-t border-navy-800">
+              {/* Call Category Requirement Pills Grid */}
+              <div className="lg:col-span-7 space-y-2">
                 <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider">
                   Select Call Category Requirement
                 </label>
@@ -684,41 +797,41 @@ export default function AdminDashboard() {
                         key={ct.id}
                         type="button"
                         onClick={() => setSelectedCallType(ct.id)}
-                        className={`text-left p-3.5 rounded-xl border transition-all duration-150 flex flex-col justify-between space-y-3 group ${
+                        className={`text-left p-3.5 rounded-xl border transition-all duration-150 flex flex-col justify-between space-y-2.5 group min-h-[92px] h-full ${
                           isSelected
                             ? "bg-primary-500/10 border-primary-500/80 ring-1 ring-primary-500/40"
                             : "bg-navy-950 border-navy-800 hover:border-navy-700 hover:bg-navy-900/60"
                         }`}
                       >
-                        <div className="flex items-center justify-between gap-2">
+                        <div className="flex items-center justify-between gap-1.5">
                           <div
-                            className={`w-8 h-8 rounded-lg flex items-center justify-center border shrink-0 transition-colors ${
+                            className={`w-7 h-7 rounded-lg flex items-center justify-center border shrink-0 transition-colors ${
                               isSelected
                                 ? "bg-primary-500 text-black border-primary-400"
                                 : "bg-navy-900 text-primary-400 border-navy-700"
                             }`}
                           >
-                            <IconComp className="w-4 h-4" />
+                            <IconComp className="w-3.5 h-3.5" />
                           </div>
 
                           {isSelected ? (
-                            <span className="text-[10px] font-bold text-primary-400 flex items-center gap-1 bg-primary-500/10 border border-primary-500/30 px-2 py-0.5 rounded-md">
+                            <span className="text-[10px] font-bold text-primary-400 flex items-center gap-1 bg-primary-500/10 border border-primary-500/30 px-2 py-0.5 rounded-md shrink-0">
                               <CheckCircle2 className="w-3 h-3" />
                               Active
                             </span>
                           ) : (
-                            <span className="text-[10px] font-medium text-slate-500 group-hover:text-slate-300 transition-colors">
+                            <span className="text-[10px] font-medium text-slate-500 group-hover:text-slate-300 transition-colors shrink-0">
                               Select
                             </span>
                           )}
                         </div>
 
                         <div>
-                          <h4 className="font-semibold text-white text-xs group-hover:text-primary-300 transition-colors">
+                          <h4 className="font-bold text-white text-xs group-hover:text-primary-300 transition-colors">
                             {ct.label}
                           </h4>
-                          <p className="text-[11px] text-slate-400 mt-0.5 truncate">
-                            Req: {ct.req}
+                          <p className="text-[11px] text-slate-400 mt-1 leading-snug font-medium">
+                            {ct.req}
                           </p>
                         </div>
                       </button>
@@ -727,274 +840,333 @@ export default function AdminDashboard() {
                 </div>
               </div>
             </div>
+          </div>
 
-            {/* Recommended Mentors List */}
-            <div className="bg-navy-900 border border-navy-700/80 rounded-2xl p-5 space-y-4">
-              <div className="flex items-center justify-between">
-                <div>
-                  <div className="flex items-center gap-2">
+          {/* Main Dual Column Section: Recommendations (Left) & Schedule Call Panel (Right) */}
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+            {/* Left Column (7 cols): AI Recommended Mentors */}
+            <div className="lg:col-span-7 space-y-4">
+              <div className="bg-navy-900 border border-navy-700/80 rounded-2xl p-5 space-y-4 shadow-xl">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-navy-800 pb-3">
+                  <div>
                     <h2 className="text-base font-semibold text-white flex items-center gap-2">
                       <Sparkles className="w-4 h-4 text-primary-400" />
-                      <span>2. AI Recommended Mentors</span>
+                      <span>2. Recommended Mentors</span>
                     </h2>
-                    <span className="text-[10px] font-bold uppercase px-2.5 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 flex items-center gap-1">
-                      <CheckCircle2 className="w-3 h-3 text-emerald-400" />
-                      Available Slots Only
-                    </span>
+                    <p className="text-xs text-slate-400 mt-0.5">
+                      Requirement: {CALL_TYPES.find((c) => c.id === selectedCallType)?.req}
+                    </p>
                   </div>
-                  <p className="text-xs text-slate-400 mt-0.5">
-                    Matching logic: {CALL_TYPES.find((c) => c.id === selectedCallType)?.req}
-                  </p>
-                </div>
-                {loadingRecs && <span className="text-xs text-primary-400 animate-pulse font-medium">Matching...</span>}
-              </div>
 
-              {recommendations.length === 0 ? (
-                <div className="text-slate-400 text-sm py-8 text-center bg-navy-950/50 rounded-xl border border-navy-800 space-y-2">
-                  <Clock className="w-8 h-8 text-amber-400/80 mx-auto opacity-70" />
-                  <p className="font-semibold text-slate-200 text-xs">No mentors with overlapping available hours found for this user.</p>
-                  <p className="text-[11px] text-slate-500">Ensure the mentor and user have both marked active availability slots on their Weekly Grid.</p>
-                </div>
-              ) : (
-
-                <div className="space-y-4">
-                  {recommendations.map((rec, i) => (
-                    <div
-                      key={rec.mentor.id}
-                      className="relative group bg-navy-950/90 border border-navy-800 hover:border-primary-500/50 transition-all duration-200 rounded-2xl p-5 space-y-4"
+                  {/* Quick Filter Pill */}
+                  <button
+                      type="button"
+                      onClick={() => setOverlapOnlyFilter(!overlapOnlyFilter)}
+                      className={`text-[11px] font-bold px-3 py-1.5 rounded-xl border transition-all flex items-center gap-1.5 shrink-0 self-start sm:self-auto ${
+                        overlapOnlyFilter
+                          ? "bg-emerald-500 text-black border-emerald-400"
+                          : "bg-navy-950 text-slate-300 border-navy-700 hover:border-emerald-500/50"
+                      }`}
                     >
-                      {/* Top Row: Rank Badge, Mentor Info, Match Score Gauge & Action */}
-                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-navy-800/80">
-                        <div className="flex items-start gap-3.5">
-                          {/* Mentor Avatar / Rank Icon */}
-                          <div className="relative shrink-0">
-                            <div className="w-11 h-11 rounded-xl bg-primary-500/10 text-primary-400 font-extrabold flex items-center justify-center text-sm border border-primary-500/30">
-                              {rec.mentor.name.split(" ").map((n) => n[0]).join("")}
-                            </div>
-                            <span className="absolute -top-1.5 -left-1.5 bg-primary-500 text-black text-[10px] font-black w-5 h-5 rounded-full flex items-center justify-center">
-                              #{i + 1}
-                            </span>
+                      <CheckCircle2 className="w-3.5 h-3.5" />
+                      <span>{overlapOnlyFilter ? "Showing: Available Slots Only" : "Filter: Overlapping Only"}</span>
+                    </button>
+
+                  {loadingRecs && (
+                    <span className="text-xs text-primary-400 animate-pulse font-medium">Matching...</span>
+                  )}
+                </div>
+
+                {/* Mentor cards with left accent border */}
+                <>
+                  {(() => {
+                    const displayedRecs = overlapOnlyFilter
+                      ? recommendations.filter((r) => r.hasOverlap)
+                      : recommendations;
+
+                      if (displayedRecs.length === 0) {
+                        return (
+                          <div className="py-10 text-center text-slate-500 text-xs space-y-1">
+                            <Sparkles className="w-7 h-7 mx-auto text-primary-400/40 mb-2" />
+                            <p className="text-slate-300 font-medium">No mentors found.</p>
+                            <p>{overlapOnlyFilter ? "Disable the overlap filter to see all matches." : "Select a user to load recommendations."}</p>
                           </div>
+                        );
+                      }
 
-                          <div>
-                            <div className="flex flex-wrap items-center gap-2">
-                              <h3 className="text-base font-bold text-white group-hover:text-primary-300 transition-colors">
-                                {rec.mentor.name}
-                              </h3>
-                              <span className="bg-emerald-500/15 text-emerald-300 text-xs font-bold px-2.5 py-0.5 rounded-full border border-emerald-500/30 flex items-center gap-1">
-                                <Sparkles className="w-3 h-3 text-emerald-400" />
-                                {rec.matchScore}% Match
-                              </span>
-                            </div>
-                            <p className="text-xs text-slate-400 font-medium mt-0.5 flex items-center gap-2">
-                              <span>{rec.mentor.email}</span>
-                              <span>•</span>
-                              <span className="text-slate-400 font-mono text-[11px]">{rec.mentor.timezone || "UTC"}</span>
-                            </p>
-                          </div>
-                        </div>
-
-                        {/* Book Call Action */}
-                        <button
-                          onClick={() => handleSelectMentorForCall(rec)}
-                          className="bg-primary-500 hover:bg-primary-400 active:bg-primary-400 text-black font-extrabold text-xs px-4 py-2.5 rounded-xl transition-all flex items-center justify-center gap-2 shrink-0"
-                        >
-                          <span>Select & Book</span>
-                          <ArrowRight className="w-4 h-4 text-black" />
-                        </button>
-                      </div>
-
-                      {/* Description */}
-                      <p className="text-xs text-slate-300 leading-relaxed">
-                        {rec.mentor.description}
-                      </p>
-
-                      {/* Availability & Skills Tags Row */}
-                      <div className="space-y-2">
-                        <div className="flex items-center justify-between text-xs">
-                          <span className="text-slate-400 font-semibold uppercase tracking-wider text-[10px]">Skills & Credentials</span>
-                          {rec.hasOverlap ? (
-                            <span className="text-emerald-400 font-medium text-[11px] flex items-center gap-1">
-                              <Clock className="w-3 h-3 text-emerald-400" />
-                              {rec.overlappingSlotsCount} overlapping open hours
-                            </span>
-                          ) : (
-                            <span className="text-amber-400/90 font-medium text-[11px] flex items-center gap-1">
-                              <Clock className="w-3 h-3 text-amber-400" />
-                              No direct slot overlap this week
-                            </span>
-                          )}
-                        </div>
-
-                        <div className="flex flex-wrap gap-1.5">
-                          {rec.mentor.tags?.map((tag, tIdx) => {
-                            const isMatched = selectedUser?.tags?.includes(tag);
+                      return (
+                        <div className="space-y-3">
+                          {displayedRecs.map((rec, i) => {
+                            const isSelected = selectedMentor?.id === rec.mentor.id;
                             return (
-                              <span
-                                key={tIdx}
-                                className={`text-xs px-2.5 py-1 rounded-lg font-medium border transition-all ${
-                                  isMatched
-                                    ? "bg-emerald-500/15 text-emerald-300 border-emerald-500/40 font-semibold"
-                                    : "bg-navy-900 text-slate-400 border-navy-800"
+                              <div
+                                key={rec.mentor.id}
+                                className={`relative group bg-navy-950/90 border hover:border-primary-500/50 transition-all duration-200 rounded-2xl p-5 space-y-4 ${
+                                  isSelected ? "border-emerald-500 bg-navy-900 shadow-lg" : "border-navy-800"
                                 }`}
                               >
-                                {isMatched && <span className="mr-1 text-emerald-400 font-bold">✓</span>}
-                                {tag}
-                              </span>
+                                {/* Top Row: Rank Badge, Mentor Info, Match Score & Action */}
+                                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-navy-800/80">
+                                  <div className="flex items-start gap-3.5">
+                                    {/* Mentor Avatar / Rank Icon */}
+                                    <div className="relative shrink-0">
+                                      <div className="w-11 h-11 rounded-xl bg-primary-500/10 text-primary-400 font-extrabold flex items-center justify-center text-sm border border-primary-500/30">
+                                        {rec.mentor.name.split(" ").map((n) => n[0]).join("")}
+                                      </div>
+                                      <span className="absolute -top-1.5 -left-1.5 bg-primary-500 text-black text-[10px] font-black w-5 h-5 rounded-full flex items-center justify-center">
+                                        #{i + 1}
+                                      </span>
+                                    </div>
+
+                                    <div>
+                                      <div className="flex flex-wrap items-center gap-2">
+                                        <h3 className="text-base font-bold text-white group-hover:text-primary-300 transition-colors">
+                                          {rec.mentor.name}
+                                        </h3>
+                                        <span className="bg-emerald-500/15 text-emerald-300 text-xs font-bold px-2.5 py-0.5 rounded-full border border-emerald-500/30 flex items-center gap-1">
+                                          <Sparkles className="w-3 h-3 text-emerald-400" />
+                                          {rec.matchScore}% Match
+                                        </span>
+                                      </div>
+                                      <p className="text-xs text-slate-400 font-medium mt-0.5 flex items-center gap-2">
+                                        <span>{rec.mentor.email}</span>
+                                        <span>•</span>
+                                        <span className="text-slate-400 font-mono text-[11px]">{rec.mentor.timezone || "UTC"}</span>
+                                      </p>
+                                    </div>
+                                  </div>
+
+                                  {/* Book Call Action */}
+                                  <button
+                                    onClick={() => handleSelectMentorForCall(rec)}
+                                    className={`font-extrabold text-xs px-4 py-2.5 rounded-xl transition-all flex items-center justify-center gap-2 shrink-0 ${
+                                      isSelected
+                                        ? "bg-primary-500 text-black"
+                                        : "bg-primary-500 hover:bg-primary-400 active:bg-primary-400 text-black shadow-lg"
+                                    }`}
+                                  >
+                                    <span>{isSelected ? "Selected ✓" : "Select & Book"}</span>
+                                    <ArrowRight className="w-4 h-4 text-black" />
+                                  </button>
+                                </div>
+
+                                {/* Description */}
+                                {rec.mentor.description && (
+                                  <p className="text-xs text-slate-300 leading-relaxed">
+                                    {rec.mentor.description}
+                                  </p>
+                                )}
+
+                                {/* Availability & Skills Tags Row */}
+                                <div className="space-y-2">
+                                  <div className="flex items-center justify-between text-xs">
+                                    <span className="text-slate-400 font-semibold uppercase tracking-wider text-[10px]">Skills & Tags</span>
+                                    {rec.hasOverlap ? (
+                                      <span className="text-emerald-400 font-medium text-[11px] flex items-center gap-1">
+                                        <Clock className="w-3 h-3 text-emerald-400" />
+                                        {rec.overlappingSlotsCount} matching time slots
+                                      </span>
+                                    ) : (
+                                      <span className="text-amber-400/90 font-medium text-[11px] flex items-center gap-1">
+                                        <Clock className="w-3 h-3 text-amber-400" />
+                                        No matching availability this week
+                                      </span>
+                                    )}
+                                  </div>
+
+                                  <div className="flex flex-wrap gap-1.5">
+                                    {rec.mentor.tags?.map((tag, tIdx) => {
+                                      const isMatched = selectedUser?.tags?.includes(tag);
+                                      return (
+                                        <span
+                                          key={tIdx}
+                                          className={`text-xs px-2.5 py-1 rounded-lg font-medium border transition-all ${
+                                            isMatched
+                                              ? "bg-emerald-500/15 text-emerald-300 border-emerald-500/40 font-semibold"
+                                              : "bg-navy-900 text-slate-400 border-navy-800"
+                                          }`}
+                                        >
+                                          {isMatched && <span className="mr-1 text-emerald-400 font-bold">✓</span>}
+                                          {tag}
+                                        </span>
+                                      );
+                                    })}
+                                  </div>
+                                </div>
+
+                                {/* Match Reason Rationale Box */}
+                                {rec.matchReasons?.length > 0 && (
+                                  <div className="bg-navy-900/90 rounded-xl p-3 text-xs space-y-1.5 border border-navy-800">
+                                    <div className="font-semibold text-slate-200 flex items-center gap-1.5 text-xs">
+                                      <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+                                      <span>Why This Match</span>
+                                    </div>
+                                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5 pt-0.5">
+                                      {rec.matchReasons.map((reason, rIdx) => (
+                                        <div key={rIdx} className="flex items-center gap-1.5 text-[11px] text-slate-300">
+                                          <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 shrink-0" />
+                                          <span className="truncate" title={reason}>{sanitizeMatchReason(reason)}</span>
+                                        </div>
+                                      ))}
+                                    </div>
+                                  </div>
+                                )}
+
+                                {/* Time Slot Selection Modal trigger row */}
+                                {rec.hasOverlap && rec.overlappingSlots?.length > 0 ? (
+                                  <div className="pt-2 border-t border-navy-800/80 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                                    <div className="text-xs font-bold text-emerald-400 flex items-center gap-1.5">
+                                      <Clock className="w-3.5 h-3.5 text-emerald-400" />
+                                      <span>{rec.overlappingSlots.length} Matching Time Slots</span>
+                                    </div>
+                                    <button
+                                      type="button"
+                                      onClick={() => setSlotModalRec(rec)}
+                                      className="px-3.5 py-2 text-xs font-extrabold text-black bg-primary-500 hover:bg-primary-400 active:bg-primary-400 rounded-xl shadow-md transition-all flex items-center justify-center gap-1.5 shrink-0"
+                                    >
+                                      <Calendar className="w-3.5 h-3.5 text-black" />
+                                      <span>Choose a Time ➔</span>
+                                    </button>
+                                  </div>
+                                ) : (
+                                  <div className="pt-2 border-t border-navy-800/80 text-[11px] text-slate-500 italic">
+                                    No matching availability this week — click Select & Book to choose a time manually.
+                                  </div>
+                                )}
+                              </div>
                             );
                           })}
                         </div>
-                      </div>
-
-                      {/* Match Reason Rationale Box */}
-                      <div className="bg-navy-900/90 rounded-xl p-3 text-xs space-y-1.5 border border-navy-800">
-                        <div className="font-semibold text-slate-200 flex items-center gap-1.5 text-xs">
-                          <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
-                          <span>AI Match Insights</span>
-                        </div>
-                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5 pt-0.5">
-                          {rec.matchReasons.map((reason, rIdx) => (
-                            <div key={rIdx} className="flex items-center gap-1.5 text-[11px] text-slate-300">
-                              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 shrink-0" />
-                              <span className="truncate" title={reason}>{reason}</span>
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-
-                      {/* Interactive Overlapping Slot Selection */}
-                      {rec.overlappingSlots && rec.overlappingSlots.length > 0 && (
-                        <div className="pt-2 border-t border-navy-800/80 space-y-1.5">
-                          <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider flex items-center gap-1">
-                            <Calendar className="w-3 h-3 text-emerald-400" />
-                            <span>Select Overlapping Time Slot To Book:</span>
-                          </div>
-                          <div className="flex flex-wrap gap-1.5">
-                            {rec.overlappingSlots.map((slot, sIdx) => {
-                              const slotInfo = getSlotDateTime(slot, weekStart);
-                              return (
-                                <button
-                                  key={sIdx}
-                                  type="button"
-                                  onClick={() => handleSelectMentorForCall(rec, slot)}
-                                  className="text-[11px] font-bold px-2.5 py-1 rounded-lg bg-emerald-500/10 text-emerald-300 border border-emerald-500/30 hover:bg-emerald-500/20 hover:border-emerald-500/60 transition-all flex items-center gap-1"
-                                  title={`Click to schedule for ${slotInfo.dateStr} at ${slotInfo.label}`}
-                                >
-                                  <Clock className="w-3 h-3 text-emerald-400" />
-                                  <span>{slotInfo.label}</span>
-                                </button>
-                              );
-                            })}
-                          </div>
-                        </div>
-                      )}
-                    </div>
-                  ))}
-                </div>
-              )}
+                      );
+                    })()}
+                </>
+              </div>
             </div>
-          </div>
 
-          {/* Right Column: Schedule Call Panel */}
-          <div id="schedule-panel" className="bg-navy-900 border border-navy-700/80 rounded-2xl p-5 space-y-4 h-fit">
-            <h2 className="text-base font-semibold text-white flex items-center gap-2">
-              <Calendar className="w-4 h-4 text-primary-400" />
-              <span>3. Book Call</span>
-            </h2>
-
-            <form onSubmit={handleScheduleMeeting} className="space-y-4">
-              {scheduleInlineError && (
-                <div className="text-red-400 text-xs bg-red-500/10 border border-red-500/30 p-2.5 rounded-lg">
-                  {scheduleInlineError}
-                </div>
-              )}
-
-              <div>
-                <label className="block text-xs font-medium text-slate-400 mb-1 flex items-center gap-1.5">
-                  <FileText className="w-3.5 h-3.5 text-primary-400" />
-                  <span>Call Title</span>
-                </label>
-                <input
-                  type="text"
-                  placeholder="e.g. Mock Interview: Alice x Dr. Aris"
-                  value={scheduleTitle}
-                  onChange={(e) => setScheduleTitle(e.target.value)}
-                  className="w-full rounded-xl bg-navy-950 border border-navy-700 text-white font-medium px-3.5 py-2 text-sm focus:ring-2 focus:ring-primary-500 outline-none"
-                />
-              </div>
-
-              <div>
-                <label className="block text-xs font-medium text-slate-400 mb-1 flex items-center gap-1.5">
-                  <User className="w-3.5 h-3.5 text-primary-400" />
-                  <span>Target User Email</span>
-                </label>
-                <input
-                  type="email"
-                  value={userEmail}
-                  onChange={(e) => setUserEmail(e.target.value)}
-                  className="w-full rounded-xl bg-navy-950 border border-navy-700 text-white font-medium px-3.5 py-2 text-sm focus:ring-2 focus:ring-primary-500 outline-none"
-                />
-              </div>
-
-              <div>
-                <label className="block text-xs font-medium text-slate-400 mb-1 flex items-center gap-1.5">
-                  <Award className="w-3.5 h-3.5 text-primary-400" />
-                  <span>Mentor Email</span>
-                </label>
-                <input
-                  type="email"
-                  value={mentorEmail}
-                  onChange={(e) => setMentorEmail(e.target.value)}
-                  className="w-full rounded-xl bg-navy-950 border border-navy-700 text-white font-medium px-3.5 py-2 text-sm focus:ring-2 focus:ring-primary-500 outline-none"
-                />
-              </div>
-
-              <div>
-                <CustomDatePicker
-                  label="Date"
-                  value={scheduleDate}
-                  onChange={(val) => setScheduleDate(val)}
-                />
-              </div>
-
-              <div>
-                <CustomTimePicker
-                  label="Start Time"
-                  hour={scheduleStartHour}
-                  minute={scheduleStartMinute}
-                  ampm={scheduleStartAmPm}
-                  onChange={({ hour, minute, ampm }) => {
-                    if (hour) setScheduleStartHour(hour);
-                    if (minute) setScheduleStartMinute(minute);
-                    if (ampm) setScheduleStartAmPm(ampm);
-                  }}
-                />
-              </div>
-
-              <div>
-                <CustomTimePicker
-                  label="End Time"
-                  hour={scheduleEndHour}
-                  minute={scheduleEndMinute}
-                  ampm={scheduleEndAmPm}
-                  onChange={({ hour, minute, ampm }) => {
-                    if (hour) setScheduleEndHour(hour);
-                    if (minute) setScheduleEndMinute(minute);
-                    if (ampm) setScheduleEndAmPm(ampm);
-                  }}
-                />
-              </div>
-
-              <button
-                type="submit"
-                disabled={loading}
-                className="w-full bg-primary-500 hover:bg-primary-400 active:bg-primary-400 disabled:opacity-50 text-black font-bold py-3 rounded-xl transition-all text-sm flex items-center justify-center gap-2"
+            {/* Right Column (5 cols): Sticky Schedule Call Panel */}
+            <div className="lg:col-span-5 sticky top-6">
+              <div
+                id="schedule-panel"
+                className="bg-navy-900 border border-navy-700/80 rounded-2xl p-5 space-y-4 shadow-2xl"
               >
-                <Calendar className="w-4 h-4 text-black" />
-                <Clock className="w-4 h-4 text-black" />
-                <span>{loading ? "Scheduling Call..." : "Confirm & Schedule Call"}</span>
-              </button>
-            </form>
+                <div className="flex items-center justify-between border-b border-navy-800 pb-3">
+                  <h2 className="text-base font-semibold text-white flex items-center gap-2">
+                    <Calendar className="w-4 h-4 text-primary-400" />
+                    <span>3. Confirm & Book Call</span>
+                  </h2>
+                  <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider bg-navy-950 px-2.5 py-1 rounded-md border border-navy-800">
+                    Step 3
+                  </span>
+                </div>
+
+                <form onSubmit={handleScheduleMeeting} className="space-y-4">
+                  {scheduleDate && scheduleStartHour && (
+                    <div className="bg-emerald-500/10 border border-emerald-500/30 rounded-xl p-3 flex items-center justify-between text-xs text-emerald-300 font-semibold">
+                      <div className="flex items-center gap-2">
+                        <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+                        <span>
+                          Time Slot Pre-Filled: <strong>{scheduleDate} @ {scheduleStartHour}:{scheduleStartMinute} {scheduleStartAmPm}</strong>
+                        </span>
+                      </div>
+                    </div>
+                  )}
+
+                  {scheduleInlineError && (
+                    <div className="text-red-400 text-xs bg-red-500/10 border border-red-500/30 p-2.5 rounded-lg">
+                      {scheduleInlineError}
+                    </div>
+                  )}
+
+                  <div>
+                    <label className="block text-xs font-medium text-slate-400 mb-1 flex items-center gap-1.5">
+                      <FileText className="w-3.5 h-3.5 text-primary-400" />
+                      <span>Call Title</span>
+                    </label>
+                    <input
+                      type="text"
+                      placeholder="e.g. Mock Interview: Alice x Dr. Aris"
+                      value={scheduleTitle}
+                      onChange={(e) => setScheduleTitle(e.target.value)}
+                      className="w-full rounded-xl bg-navy-950 border border-navy-700 text-white font-medium px-3.5 py-2 text-sm focus:ring-2 focus:ring-primary-500 outline-none"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-medium text-slate-400 mb-1 flex items-center gap-1.5">
+                      <User className="w-3.5 h-3.5 text-primary-400" />
+                      <span>Participant Email</span>
+                    </label>
+                    <input
+                      type="email"
+                      value={userEmail}
+                      onChange={(e) => setUserEmail(e.target.value)}
+                      className="w-full rounded-xl bg-navy-950 border border-navy-700 text-white font-medium px-3.5 py-2 text-sm focus:ring-2 focus:ring-primary-500 outline-none"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-medium text-slate-400 mb-1 flex items-center gap-1.5">
+                      <Award className="w-3.5 h-3.5 text-primary-400" />
+                      <span>Mentor Email</span>
+                    </label>
+                    <input
+                      type="email"
+                      value={mentorEmail}
+                      onChange={(e) => setMentorEmail(e.target.value)}
+                      className="w-full rounded-xl bg-navy-950 border border-navy-700 text-white font-medium px-3.5 py-2 text-sm focus:ring-2 focus:ring-primary-500 outline-none"
+                    />
+                  </div>
+
+                  <div>
+                    <CustomDatePicker
+                      label="Date"
+                      value={scheduleDate}
+                      onChange={(val) => setScheduleDate(val)}
+                    />
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <CustomTimePicker
+                        label="Start Time"
+                        hour={scheduleStartHour}
+                        minute={scheduleStartMinute}
+                        ampm={scheduleStartAmPm}
+                        onChange={({ hour, minute, ampm }) => {
+                          if (hour) setScheduleStartHour(hour);
+                          if (minute) setScheduleStartMinute(minute);
+                          if (ampm) setScheduleStartAmPm(ampm);
+                        }}
+                      />
+                    </div>
+
+                    <div>
+                      <CustomTimePicker
+                        label="End Time"
+                        hour={scheduleEndHour}
+                        minute={scheduleEndMinute}
+                        ampm={scheduleEndAmPm}
+                        onChange={({ hour, minute, ampm }) => {
+                          if (hour) setScheduleEndHour(hour);
+                          if (minute) setScheduleEndMinute(minute);
+                          if (ampm) setScheduleEndAmPm(ampm);
+                        }}
+                      />
+                    </div>
+                  </div>
+
+                  <button
+                    type="submit"
+                    disabled={loading}
+                    className="w-full bg-primary-500 hover:bg-primary-400 active:bg-primary-400 disabled:opacity-50 text-black font-bold py-3 rounded-xl transition-all text-sm flex items-center justify-center gap-2 shadow-lg hover:shadow-primary-500/20"
+                  >
+                    <Calendar className="w-4 h-4 text-black" />
+                    <Clock className="w-4 h-4 text-black" />
+                    <span>{loading ? "Scheduling Call..." : "Confirm & Schedule Call"}</span>
+                  </button>
+                </form>
+              </div>
+            </div>
           </div>
         </div>
       )}
@@ -1010,7 +1182,7 @@ export default function AdminDashboard() {
                 <span>Member Directory & Account Settings</span>
               </h2>
               <p className="text-xs text-slate-400 mt-1">
-                Add, update, edit, and delete Mentors and Users, including their skills, tags, descriptions, and roles.
+                Manage team members, including their skills, tags, and roles.
               </p>
             </div>
 
@@ -1029,7 +1201,7 @@ export default function AdminDashboard() {
               <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
               <input
                 type="text"
-                placeholder="Search member by name, email, or tags..."
+                placeholder="Search by name, email, or tags..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 className="w-full bg-navy-950 border border-navy-700/80 text-white text-xs pl-9 pr-4 py-2 rounded-lg outline-none focus:ring-2 focus:ring-primary-500"
@@ -1386,7 +1558,7 @@ export default function AdminDashboard() {
 
                 <p className="text-xs text-slate-300 leading-relaxed">
                   Are you sure you want to permanently delete <strong className="text-white">{deletingTarget.name}</strong>?
-                  All associated availability schedules, free time slots, and scheduled meetings linked to this account will be automatically purged.
+                  All data associated with this account, including schedules and meetings, will be removed.
                 </p>
 
                 <div className="flex items-center justify-end gap-3 pt-2 border-t border-navy-800">
@@ -1476,7 +1648,7 @@ export default function AdminDashboard() {
                         </div>
 
                         <p className="text-xs text-slate-300 line-clamp-2">
-                          {u.description || "No description provided."}
+                          {u.description || "No bio added yet."}
                         </p>
 
                         <div className="flex flex-wrap gap-1 pt-1">
@@ -1632,7 +1804,7 @@ export default function AdminDashboard() {
                         </div>
 
                         <p className="text-xs text-slate-300 line-clamp-2">
-                          {u.description || "No description provided."}
+                          {u.description || "No bio added yet."}
                         </p>
 
                         <div className="flex flex-wrap gap-1 pt-1">
@@ -1810,7 +1982,8 @@ export default function AdminDashboard() {
                   return (
                     <div
                       key={m.id}
-                      className={`border rounded-2xl p-5 transition-all duration-200 flex flex-col md:flex-row md:items-center justify-between gap-4 group hover:shadow-lg overflow-hidden ${
+                      onClick={() => setSelectedViewMeeting(m)}
+                      className={`border rounded-2xl p-5 transition-all duration-200 flex flex-col md:flex-row md:items-center justify-between gap-4 group hover:shadow-lg overflow-hidden cursor-pointer ${
                         isDone
                           ? "bg-emerald-950/20 border-emerald-500/40 hover:border-emerald-400"
                           : "bg-navy-950 border-navy-800/80 hover:border-navy-700"
@@ -1939,7 +2112,7 @@ export default function AdminDashboard() {
                       {users.length} Available
                     </span>
                   </div>
-                  <p className="text-xs text-slate-400 mt-0.5">Choose a user profile to run AI RAG matching & scheduling</p>
+                  <p className="text-xs text-slate-400 mt-0.5">Choose a member to find the best mentor match</p>
                 </div>
               </div>
               <button
@@ -1955,7 +2128,7 @@ export default function AdminDashboard() {
               <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
               <input
                 type="text"
-                placeholder="Search user by name, email, or skill..."
+                placeholder="Search by name, email, or skill..."
                 value={userSearchQuery}
                 onChange={(e) => {
                   setUserSearchQuery(e.target.value);
@@ -1998,8 +2171,8 @@ export default function AdminDashboard() {
                   {filteredModalUsers.length === 0 ? (
                     <div className="py-12 text-center text-slate-400 space-y-2 bg-navy-950/60 rounded-xl border border-navy-800">
                       <User className="w-8 h-8 text-slate-500 mx-auto opacity-50" />
-                      <p className="text-xs font-semibold text-slate-300">No users match "{userSearchQuery}"</p>
-                      <p className="text-[11px] text-slate-500">Try searching by email address or broad keywords</p>
+                      <p className="text-xs font-semibold text-slate-300">No members match "{userSearchQuery}"</p>
+                      <p className="text-[11px] text-slate-500">Try a different search term</p>
                     </div>
                   ) : (
                     <>
@@ -2373,6 +2546,89 @@ export default function AdminDashboard() {
                 className="px-5 py-2 text-xs font-bold text-white bg-red-600 hover:bg-red-500 rounded-xl shadow-lg transition-all disabled:opacity-50"
               >
                 {cancelingMeeting ? "Cancelling..." : "Cancel & Delete Call"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* TIME PERIOD SELECTION MODAL FOR INSTANT OVERLAP MATCH */}
+      {slotModalRec && (
+        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-md flex items-center justify-center p-4">
+          <div className="bg-navy-900 border border-navy-700/80 rounded-2xl max-w-lg w-full p-6 space-y-5 shadow-2xl animate-in fade-in zoom-in-95 duration-200">
+            {/* Modal Header */}
+            <div className="flex items-center justify-between border-b border-navy-800 pb-4">
+              <div className="flex items-center gap-3.5">
+                <div className="w-11 h-11 rounded-xl bg-emerald-500/10 text-emerald-400 border border-emerald-500/30 flex items-center justify-center font-bold shrink-0">
+                  <Clock className="w-5 h-5 text-emerald-400" />
+                </div>
+                <div>
+                  <h3 className="text-base font-extrabold text-white">Select Time Period</h3>
+                  <p className="text-xs text-slate-400">
+                    Mutually available slots for <span className="text-emerald-400 font-bold">{slotModalRec.mentor.name}</span> & <span className="text-primary-400 font-bold">{selectedUser?.name || "User"}</span>
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setSlotModalRec(null)}
+                className="w-8 h-8 rounded-xl bg-navy-950 text-slate-400 hover:text-white border border-navy-800 flex items-center justify-center font-bold transition-all"
+              >
+                ✕
+              </button>
+            </div>
+
+            {/* Slots List / Grid */}
+            <div className="space-y-2 max-h-[60vh] overflow-y-auto pr-1">
+              <p className="text-[11px] font-bold text-slate-400 uppercase tracking-wider mb-2">
+                Click a slot to pre-fill the schedule & select mentor:
+              </p>
+              {slotModalRec.overlappingSlots?.map((slot, sIdx) => {
+                const slotInfo = getSlotDateTime(slot, weekStart);
+                const key = `${slotModalRec.mentor.id}_${slot.dayOfWeek}_${slot.hour}`;
+                const isChipSelected = selectedSlotKey === key;
+                return (
+                  <button
+                    key={sIdx}
+                    type="button"
+                    onClick={() => {
+                      handleSelectMentorForCall(slotModalRec, slot);
+                      setSlotModalRec(null);
+                    }}
+                    className={`w-full flex items-center justify-between p-3.5 rounded-xl border text-left transition-all ${
+                      isChipSelected
+                        ? "bg-emerald-500/20 border-emerald-500/50 text-white ring-1 ring-emerald-500/30"
+                        : "bg-navy-950 border-navy-800 text-slate-300 hover:bg-navy-800 hover:border-emerald-500/40 hover:text-white"
+                    }`}
+                  >
+                    <div className="flex items-center gap-3">
+                      <div className="w-8 h-8 rounded-lg bg-navy-900 border border-navy-700 text-emerald-400 flex items-center justify-center shrink-0">
+                        <Calendar className="w-4 h-4 text-emerald-400" />
+                      </div>
+                      <div>
+                        <p className="text-xs font-bold text-white">{slotInfo.label}</p>
+                        <p className="text-[10px] text-slate-400">{slotInfo.dateStr}</p>
+                      </div>
+                    </div>
+
+                    <span className={`text-xs font-bold px-3 py-1.5 rounded-lg border transition-all ${
+                      isChipSelected ? "bg-emerald-500 text-black border-emerald-400" : "bg-navy-900 text-emerald-300 border-emerald-500/30"
+                    }`}>
+                      {isChipSelected ? "✓ Booked" : "Select Slot"}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+
+            {/* Modal Footer */}
+            <div className="flex justify-end border-t border-navy-800 pt-3.5">
+              <button
+                type="button"
+                onClick={() => setSlotModalRec(null)}
+                className="px-5 py-2 text-xs font-bold text-slate-300 hover:text-white bg-navy-950 hover:bg-navy-800 border border-navy-800 rounded-xl transition-all"
+              >
+                Cancel
               </button>
             </div>
           </div>

@@ -11,17 +11,28 @@ import {
   isPastDateTime,
 } from "../utils/time";
 
-const HOURS = Array.from({ length: 24 }, (_, i) => i);
+// Show hours 6 AM – 10 PM (UTC indices 6–22) for a cleaner grid
+const DISPLAY_HOURS = Array.from({ length: 17 }, (_, i) => i + 6);
+const ALL_HOURS = Array.from({ length: 24 }, (_, i) => i);
 
 const TIMEZONE_OPTIONS = [
-  { value: "UTC", label: "GMT (GMT+0)" },
+  { value: "UTC", label: "UTC (GMT+0)" },
   { value: "IST", label: "IST (GMT+5:30)" },
 ];
 
+const DAY_ABBR = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+
+function formatHourShort(utcHourIndex, tz) {
+  const iso = new Date(Date.UTC(2000, 0, 1, utcHourIndex, 0)).toISOString();
+  return formatTimeLocal(iso, tz);
+}
+
 export default function Availability() {
   const { user } = useAuth();
+  const isMentor = user?.role === "MENTOR";
+
   const [displayTimezone, setDisplayTimezone] = useState(user?.timezone || "UTC");
-  const [weekOffset, setWeekOffset] = useState(0); // 0 = current Mon–Sun week
+  const [weekOffset, setWeekOffset] = useState(0);
   const [data, setData] = useState({ dates: [], availability: {} });
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -29,7 +40,7 @@ export default function Availability() {
   const [error, setError] = useState("");
 
   const [selectorDate, setSelectorDate] = useState("");
-  const [selectorHour, setSelectorHour] = useState(0);
+  const [selectorHour, setSelectorHour] = useState(9);
 
   const fetchWeekly = useCallback(async () => {
     setLoading(true);
@@ -46,9 +57,7 @@ export default function Availability() {
     }
   }, [weekOffset]);
 
-  useEffect(() => {
-    fetchWeekly();
-  }, [fetchWeekly]);
+  useEffect(() => { fetchWeekly(); }, [fetchWeekly]);
 
   const isSlotEnabled = (dateStr, hour) => {
     const key = `${dateStr}-${hour}`;
@@ -74,28 +83,23 @@ export default function Availability() {
     setToggles((prev) => ({ ...prev, [key]: !isSlotEnabled(dateStr, hour) }));
   };
 
+  // Count enabled slots for a date
+  const countEnabled = (dateStr) =>
+    DISPLAY_HOURS.filter((h) => isSlotEnabled(dateStr, h)).length;
+
   const saveBatch = async () => {
     setSaving(true);
     setError("");
     const slots = [];
     data.dates.forEach((dateStr) => {
-      HOURS.forEach((hour) => {
+      ALL_HOURS.forEach((hour) => {
         const key = `${dateStr}-${hour}`;
         if (toggles[key] === undefined) return;
-        const enabled = toggles[key];
         const { startTime, endTime } = slotToUTC(dateStr, hour);
-        slots.push({
-          date: dateStr,
-          startTime,
-          endTime,
-          enabled,
-        });
+        slots.push({ date: dateStr, startTime, endTime, enabled: toggles[key] });
       });
     });
-    if (slots.length === 0) {
-      setSaving(false);
-      return;
-    }
+    if (!slots.length) { setSaving(false); return; }
     try {
       await availabilityApi.saveBatch(slots);
       await fetchWeekly();
@@ -108,227 +112,246 @@ export default function Availability() {
   };
 
   const hasChanges = Object.keys(toggles).length > 0;
-
   const gridDates = getViewWeekDates(weekOffset);
   const gridStart = gridDates[0];
-
-  const prevWeek = () => {
-    if (weekOffset === 0) return; // do not navigate into the past
-    setWeekOffset((prev) => Math.max(0, prev - 1));
-  };
-  const nextWeek = () => {
-    setWeekOffset((prev) => prev + 1);
-  };
+  const gridEnd = gridDates[6];
 
   const weekMin = gridDates[0] || "";
   const weekMax = gridDates[6] || "";
-
-  /** selectorDate is UTC date (YYYY-MM-DD), selectorHour is UTC hour index (0-23). */
-  const isSelectorSlotDisabled =
-    selectorDate !== "" && isSlotDisabled(selectorDate, selectorHour);
+  const isSelectorSlotDisabled = selectorDate !== "" && isSlotDisabled(selectorDate, selectorHour);
 
   const confirmSelectorSlot = () => {
-     console.log("=== confirmSelectorSlot called ===");
-    console.log("selectorDate:", selectorDate);
-    console.log("selectorHour:", selectorHour);
-    console.log("isSelectorSlotDisabled:", isSelectorSlotDisabled);
-    console.log("!selectorDate:", !selectorDate);
-
-    if (!selectorDate || isSelectorSlotDisabled){
-      console.log("RETURNING EARLY — button did nothing");
-      return;
-    } 
+    if (!selectorDate || isSelectorSlotDisabled) return;
     const key = `${selectorDate}-${selectorHour}`;
-    console.log("key being set:", key);
     setToggles((prev) => ({ ...prev, [key]: true }));
-    console.log("toggle set successfully");
   };
 
-  const cancelChanges = () => {
-    setToggles({});
-  };
+  const cancelChanges = () => setToggles({});
 
-  /** Format UTC hour slot (0-23) for display in current timezone. */
-  const formatTimeOptionLabel = (utcHourIndex) => {
-    const startISO = new Date(Date.UTC(2000, 0, 1, utcHourIndex, 0)).toISOString();
-    const endISO = new Date(Date.UTC(2000, 0, 1, utcHourIndex + 1, 0)).toISOString();
-    const start = formatTimeLocal(startISO, displayTimezone);
-    const end = formatTimeLocal(endISO, displayTimezone);
-    return formatTimeRange(`${start} – ${end}`);
+  // Select an entire day column ON/OFF
+  const toggleDay = (dateStr) => {
+    const allOn = DISPLAY_HOURS.every((h) => isSlotEnabled(dateStr, h) || isSlotDisabled(dateStr, h));
+    const newState = !allOn;
+    const updates = {};
+    DISPLAY_HOURS.forEach((h) => {
+      if (!isSlotDisabled(dateStr, h)) {
+        updates[`${dateStr}-${h}`] = newState;
+      }
+    });
+    setToggles((prev) => ({ ...prev, ...updates }));
   };
 
   return (
-    <div className="space-y-6">
-      <header className="space-y-1">
-        <h1 className="text-2xl font-semibold text-white">User Dashboard</h1>
-        <p className="text-slate-400 font-medium">Manage your availability.</p>
-      </header>
+    <div className="space-y-5">
+      {/* Header */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+        <div>
+          <h1 className="text-xl font-bold text-white">
+            {isMentor ? "Mentor" : "User"} Availability
+          </h1>
+          <p className="text-xs text-slate-400 mt-0.5">
+            Set your weekly open hours. Mentors will be matched based on these slots.
+          </p>
+        </div>
+
+        {/* Save / Cancel */}
+        <div className="flex items-center gap-2 shrink-0">
+          {hasChanges && (
+            <button
+              type="button"
+              onClick={cancelChanges}
+              className="text-xs font-bold px-4 py-2 rounded-lg border border-navy-700 text-slate-300 hover:text-white hover:border-navy-600 transition bg-navy-950"
+            >
+              Discard
+            </button>
+          )}
+          <button
+            type="button"
+            onClick={saveBatch}
+            disabled={saving || !hasChanges}
+            className="text-xs font-bold px-4 py-2 rounded-lg bg-primary-500 hover:bg-primary-400 text-black transition disabled:opacity-40 disabled:cursor-not-allowed"
+          >
+            {saving ? "Saving…" : `Save Changes${hasChanges ? ` (${Object.keys(toggles).length})` : ""}`}
+          </button>
+        </div>
+      </div>
 
       {error && (
-        <div className="text-red-400 text-sm font-medium bg-red-500/10 border border-red-500/30 rounded-lg px-4 py-2">
+        <div className="text-red-400 text-xs bg-red-500/10 border border-red-500/30 rounded-xl px-4 py-2.5">
           {error}
         </div>
       )}
 
-      <section className="w-full rounded-2xl bg-slate-900 border border-slate-800 p-4">
-        <div className="flex flex-col gap-4 md:flex-row md:items-end md:gap-4">
-          <div className="w-full md:w-40">
-            <label className="block text-sm font-medium text-slate-400 mb-1.5">Timezone</label>
-            <select
-              value={displayTimezone}
-              onChange={(e) => setDisplayTimezone(e.target.value)}
-              className="w-full rounded-lg bg-slate-950 border border-slate-800 text-white font-medium px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-            >
-              {TIMEZONE_OPTIONS.map((opt) => (
-                <option key={opt.value} value={opt.value}>
-                  {opt.label}
-                </option>
-              ))}
-            </select>
-          </div>
-          <div className="w-full md:w-40">
-            <label className="block text-sm font-medium text-slate-400 mb-1.5">Date</label>
-            <input
-              type="date"
-              value={selectorDate}
-              min={weekMin}
-              max={weekMax}
-              onChange={(e) => setSelectorDate(e.target.value)}
-              className="w-full rounded-lg bg-slate-950 border border-slate-800 text-white font-medium px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent [color-scheme:dark] appearance-none"
-            />
-          </div>
-          <div className="w-full md:w-52">
-            <label className="block text-sm font-medium text-slate-400 mb-1.5">Time</label>
-            <select
-              value={selectorHour}
-              onChange={(e) => setSelectorHour(Number(e.target.value))}
-              className="w-full rounded-lg bg-slate-950 border border-slate-800 text-white font-medium px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent max-h-[12rem] overflow-y-auto"
-            >
-              {HOURS.map((utcHourIndex) => {
-                const disabled = selectorDate ? isSlotDisabled(selectorDate, utcHourIndex) : false;
-                return (
-                  <option key={utcHourIndex} value={utcHourIndex} disabled={disabled}>
-                    {formatTimeOptionLabel(utcHourIndex)}
+      {/* Quick Add Slot + Timezone bar */}
+      <div className="bg-navy-900 border border-navy-700/80 rounded-2xl p-4 flex flex-col md:flex-row md:items-end gap-4 shadow-xl">
+        <div className="flex-1">
+          <p className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Quick Add Slot</p>
+          <div className="flex flex-wrap gap-3 items-end">
+            <div>
+              <label className="block text-[11px] text-slate-500 mb-1">Date</label>
+              <input
+                type="date"
+                value={selectorDate}
+                min={weekMin}
+                max={weekMax}
+                onChange={(e) => setSelectorDate(e.target.value)}
+                className="rounded-lg bg-navy-950 border border-navy-700 text-white text-xs font-medium px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary-500 [color-scheme:dark]"
+              />
+            </div>
+            <div>
+              <label className="block text-[11px] text-slate-500 mb-1">Time Slot</label>
+              <select
+                value={selectorHour}
+                onChange={(e) => setSelectorHour(Number(e.target.value))}
+                className="rounded-lg bg-navy-950 border border-navy-700 text-white text-xs font-medium px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary-500 min-w-[140px]"
+              >
+                {DISPLAY_HOURS.map((h) => (
+                  <option key={h} value={h} disabled={selectorDate ? isSlotDisabled(selectorDate, h) : false}>
+                    {formatHourShort(h, displayTimezone)} – {formatHourShort(h + 1, displayTimezone)}
                   </option>
-                );
-              })}
-            </select>
+                ))}
+              </select>
+            </div>
+            <button
+              type="button"
+              onClick={confirmSelectorSlot}
+              disabled={!selectorDate || isSelectorSlotDisabled}
+              className="text-xs font-bold px-4 py-2 rounded-lg bg-emerald-500 hover:bg-emerald-400 text-black transition disabled:opacity-40 disabled:cursor-not-allowed"
+            >
+              + Add Slot
+            </button>
           </div>
-          <button
-            type="button"
-            onClick={confirmSelectorSlot}
-            disabled={!selectorDate || isSelectorSlotDisabled}
-            className="rounded-lg bg-blue-600 hover:bg-blue-500 text-white font-medium px-6 py-2.5 transition disabled:opacity-50 disabled:cursor-not-allowed shrink-0"
-          >
-            Confirm / Save
-          </button>
         </div>
-      </section>
 
-      <section className="rounded-2xl bg-slate-900 border border-slate-800 overflow-hidden p-6">
-        <div className="mb-4 flex items-start justify-between gap-4">
-          <div>
-            <h2 className="text-lg font-semibold text-white">Your availability</h2>
-            <p className="text-slate-400 font-medium text-sm mt-0.5">
-              Click slots to toggle availability. Save when done.
-            </p>
-          </div>
+        <div className="shrink-0">
+          <label className="block text-[11px] text-slate-500 mb-1">Display Timezone</label>
+          <select
+            value={displayTimezone}
+            onChange={(e) => setDisplayTimezone(e.target.value)}
+            className="rounded-lg bg-navy-950 border border-navy-700 text-white text-xs font-medium px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary-500"
+          >
+            {TIMEZONE_OPTIONS.map((opt) => (
+              <option key={opt.value} value={opt.value}>{opt.label}</option>
+            ))}
+          </select>
+        </div>
+      </div>
+
+      {/* Weekly Grid */}
+      <div className="bg-navy-900 border border-navy-700/80 rounded-2xl overflow-hidden shadow-xl">
+        {/* Week Navigation Header */}
+        <div className="flex items-center justify-between gap-4 px-5 py-4 border-b border-navy-800">
           <div className="flex items-center gap-3">
             <button
               type="button"
-              onClick={cancelChanges}
-              disabled={!hasChanges}
-              className="rounded-lg border border-slate-600 bg-transparent text-slate-300 font-medium px-5 py-2.5 hover:bg-slate-800 hover:border-slate-500 transition disabled:opacity-50 disabled:cursor-not-allowed"
+              onClick={() => setWeekOffset((p) => Math.max(0, p - 1))}
+              disabled={weekOffset === 0}
+              className="w-7 h-7 rounded-lg border border-navy-700 bg-navy-950 text-slate-400 hover:text-white hover:border-navy-600 transition flex items-center justify-center text-sm disabled:opacity-30 disabled:cursor-not-allowed"
             >
-              Cancel
+              ‹
             </button>
+            <div className="text-sm font-bold text-white">
+              {formatDateLocal(gridStart, displayTimezone)}
+              <span className="text-slate-500 font-normal mx-1">→</span>
+              {formatDateLocal(gridEnd, displayTimezone)}
+            </div>
             <button
               type="button"
-              onClick={saveBatch}
-              disabled={saving || !hasChanges}
-              className="rounded-lg bg-blue-600 hover:bg-blue-500 text-white font-medium px-5 py-2.5 transition disabled:opacity-50 disabled:cursor-not-allowed"
+              onClick={() => setWeekOffset((p) => p + 1)}
+              className="w-7 h-7 rounded-lg border border-navy-700 bg-navy-950 text-slate-400 hover:text-white hover:border-navy-600 transition flex items-center justify-center text-sm"
             >
-              {saving ? "Saving..." : "Save Availability"}
+              ›
             </button>
           </div>
-        </div>
-        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-center gap-4 mb-6">
-          <button
-            type="button"
-            onClick={prevWeek}
-            disabled={weekOffset === 0}
-            className={`rounded-full w-9 h-9 flex items-center justify-center border border-slate-700 bg-slate-800/50 text-slate-300 font-medium transition shrink-0 ${
-              weekOffset === 0
-                ? "opacity-40 cursor-not-allowed"
-                : "hover:bg-slate-800 hover:border-slate-600"
-            }`}
-            aria-label="Previous week"
-          >
-            ←
-          </button>
-          <span className="text-slate-400 font-medium text-sm text-center">
-            Week of {formatDateLocal(gridStart, displayTimezone)}
-          </span>
-          <button
-            type="button"
-            onClick={nextWeek}
-            className="rounded-full w-9 h-9 flex items-center justify-center border border-slate-700 bg-slate-800/50 text-slate-300 font-medium hover:bg-slate-800 hover:border-slate-600 transition shrink-0"
-            aria-label="Next week"
-          >
-            →
-          </button>
+
+          <div className="flex items-center gap-3 text-[10px] text-slate-500">
+            <span className="flex items-center gap-1.5">
+              <span className="w-3 h-3 rounded-sm bg-primary-500 inline-block" />
+              Available
+            </span>
+            <span className="flex items-center gap-1.5">
+              <span className="w-3 h-3 rounded-sm bg-navy-800 border border-navy-700 inline-block" />
+              Off
+            </span>
+            <span className="flex items-center gap-1.5">
+              <span className="w-3 h-3 rounded-sm bg-navy-950 border border-dashed border-navy-700 opacity-50 inline-block" />
+              Past
+            </span>
+          </div>
         </div>
 
-        <div className="overflow-x-auto -mx-1 max-h-[60vh] overflow-y-auto">
-          {loading ? (
-            <div className="p-12 text-center text-slate-400 font-medium">Loading...</div>
-          ) : (
-            <table className="w-full table-fixed border-collapse">
+        {loading ? (
+          <div className="p-16 text-center text-slate-500 text-sm animate-pulse">Loading schedule…</div>
+        ) : (
+          <div className="overflow-x-auto overflow-y-auto max-h-[65vh]">
+            <table className="w-full border-collapse" style={{ minWidth: "600px" }}>
               <colgroup>
-                <col style={{ width: "11rem" }} />
-                {gridDates.map((d) => (
-                  <col key={d} />
-                ))}
+                <col style={{ width: "80px" }} />
+                {gridDates.map((d) => <col key={d} />)}
               </colgroup>
-              <thead>
-                <tr className="border-b border-slate-800">
-                  <th className="text-left py-2 px-2 text-slate-400 font-medium text-xs whitespace-nowrap">Time</th>
-                  {gridDates.map((d) => (
-                    <th key={d} className="py-2 px-1 text-white font-medium text-xs text-center">
-                      {formatDateLocal(d, displayTimezone)}
-                    </th>
-                  ))}
+
+              <thead className="sticky top-0 z-10 bg-navy-900">
+                <tr className="border-b border-navy-800">
+                  <th className="py-3 px-2 text-[10px] text-slate-500 font-semibold uppercase tracking-wider text-left">
+                    Hour
+                  </th>
+                  {gridDates.map((d, di) => {
+                    const enabled = countEnabled(d);
+                    const isToday = d === new Date().toISOString().slice(0, 10);
+                    return (
+                      <th
+                        key={d}
+                        className="py-2 px-1 text-center cursor-pointer group"
+                        onClick={() => toggleDay(d)}
+                        title="Click to toggle entire day"
+                      >
+                        <div className={`text-[10px] font-bold uppercase tracking-wider mb-0.5 ${isToday ? "text-primary-400" : "text-slate-400"}`}>
+                          {DAY_ABBR[di]}
+                        </div>
+                        <div className={`text-xs font-bold ${isToday ? "text-white" : "text-slate-300"}`}>
+                          {d.slice(8)}
+                        </div>
+                        <div className="text-[9px] text-slate-500 mt-0.5">
+                          {enabled > 0 ? (
+                            <span className="text-emerald-400 font-bold">{enabled} open</span>
+                          ) : (
+                            <span>off</span>
+                          )}
+                        </div>
+                      </th>
+                    );
+                  })}
                 </tr>
               </thead>
+
               <tbody>
-                {HOURS.map((hour) => (
-                  <tr key={hour} className="border-b border-slate-800/80">
-                    <td className="py-1.5 px-2 text-slate-400 font-medium text-xs whitespace-nowrap align-middle">
-                      {formatTimeOptionLabel(hour)}
+                {DISPLAY_HOURS.map((hour) => (
+                  <tr key={hour} className="border-b border-navy-800/60 hover:bg-navy-950/30 transition-colors">
+                    <td className="py-1 px-2 text-[10px] text-slate-500 font-mono whitespace-nowrap align-middle">
+                      {formatHourShort(hour, displayTimezone)}
                     </td>
                     {gridDates.map((dateStr) => {
                       const enabled = isSlotEnabled(dateStr, hour);
                       const disabled = isSlotDisabled(dateStr, hour);
+                      const pending = toggles[`${dateStr}-${hour}`] !== undefined;
                       return (
-                        <td key={dateStr} className="p-1 align-middle">
+                        <td key={dateStr} className="p-0.5 align-middle">
                           <button
                             type="button"
                             onClick={() => toggleSlot(dateStr, hour)}
                             disabled={disabled}
+                            title={disabled ? "Past slot" : enabled ? "Click to mark unavailable" : "Click to mark available"}
                             className={`
-                              block w-full py-2 rounded-md border font-medium text-xs uppercase tracking-wide transition
+                              w-full h-8 rounded-md border text-[9px] font-bold uppercase tracking-wide transition-all duration-100
                               ${disabled
-                                ? "bg-slate-800/50 border-slate-800 cursor-not-allowed opacity-40 text-slate-500"
-                                : ""}
-                              ${!disabled && enabled
-                                ? "bg-blue-600 border-blue-600 text-white hover:bg-blue-500"
-                                : ""}
-                              ${!disabled && !enabled
-                                ? "bg-slate-800 border-slate-700 text-slate-500 hover:border-slate-600 hover:bg-slate-800/80"
-                                : ""}
+                                ? "bg-navy-950/50 border-navy-800/50 cursor-not-allowed opacity-30 text-slate-600"
+                                : enabled
+                                  ? `bg-primary-500/90 border-primary-400/80 text-black hover:bg-primary-400 ${pending ? "ring-1 ring-white/50" : ""}`
+                                  : `bg-navy-950 border-navy-800 text-slate-700 hover:border-navy-600 hover:text-slate-500 ${pending ? "ring-1 ring-slate-500/50" : ""}`
+                              }
                             `}
                           >
-                            {enabled ? "AVAILABLE" : "Off"}
+                            {disabled ? "" : enabled ? "✓" : ""}
                           </button>
                         </td>
                       );
@@ -337,9 +360,9 @@ export default function Availability() {
                 ))}
               </tbody>
             </table>
-          )}
-        </div>
-      </section>
+          </div>
+        )}
+      </div>
     </div>
   );
 }
